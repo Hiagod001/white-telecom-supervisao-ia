@@ -1,0 +1,1545 @@
+"use client";
+
+import {
+  Activity,
+  AlertTriangle,
+  BarChart3,
+  Bell,
+  Bot,
+  CheckCircle2,
+  ChevronRight,
+  ClipboardCheck,
+  Clock3,
+  Columns3,
+  Download,
+  Eye,
+  FileText,
+  Filter,
+  Headphones,
+  LayoutDashboard,
+  LineChart,
+  Lock,
+  MessageCircle,
+  Phone,
+  RefreshCw,
+  Search,
+  Settings,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Star,
+  Target,
+  UserCheck,
+  Users,
+} from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
+
+const appConfig = {
+  productName: "Delipe Supervisao IA",
+  logoText: "DS",
+  company: "Uai Fibra",
+  colors: {
+    accent: "#ff8a22",
+    success: "#36d399",
+    warning: "#f5c542",
+    danger: "#ff5c77",
+    violet: "#7c3aed",
+  },
+};
+
+type Sector = "Comercial" | "Atendimento" | "Retencao";
+type Channel = "WhatsApp" | "Chatbot" | "Audio" | "Ligacao" | "Multicanal";
+type ReviewStatus = "Pendente" | "Revisado" | "Contestado" | "Atribuido";
+type AlertStatus = "Aberto" | "Reconhecido" | "Resolvido";
+
+type Conversation = {
+  id: string;
+  protocol: string;
+  start: Date;
+  end: Date;
+  client: string;
+  maskedPhone: string;
+  attendant: string;
+  team: string;
+  sector: Sector;
+  channel: Channel;
+  duration: number;
+  classification: string;
+  eligible: boolean;
+  ineligibleReason: string;
+  score: number;
+  adherence: number;
+  sentiment: "Baixa tensao" | "Atencao" | "Critico";
+  resolution: "Resolvido" | "Parcial" | "Nao resolvido" | "Indeterminado";
+  recurrences: number;
+  alerts: string[];
+  reviewStatus: ReviewStatus;
+  confidence: number;
+  processVersion: string;
+  process: string;
+  firstResponse: number;
+  responseTime: number;
+  isMultichannelCase: boolean;
+};
+
+type AlertItem = {
+  id: string;
+  type: string;
+  severity: "Critico" | "Alto" | "Medio" | "Baixo";
+  owner: string;
+  due: string;
+  status: AlertStatus;
+  evidence: string;
+  conversationId: string;
+};
+
+type ProcessStep = {
+  name: string;
+  weight: number;
+  status: "Cumpriu" | "Nao cumpriu" | "Nao aplicavel" | "Incerto";
+  score: number;
+  evidence: string;
+  guidance: string;
+};
+
+const teams = ["Comercial Norte", "Suporte N1", "Retencao", "Qualidade"];
+const attendantNames = [
+  "Ana Costa",
+  "Bruno Lima",
+  "Carla Souza",
+  "Diego Rocha",
+  "Elisa Martins",
+  "Fabio Duarte",
+  "Giovana Reis",
+  "Henrique Alves",
+  "Isabela Nunes",
+  "Joao Pedro",
+  "Karina Melo",
+  "Lucas Moura",
+  "Marina Lopes",
+  "Nicolas Prado",
+  "Olivia Freitas",
+  "Paulo Rios",
+  "Renata Campos",
+  "Samuel Torres",
+  "Tais Ribeiro",
+  "Vitor Sales",
+];
+
+const classificationBySector: Record<Sector, string[]> = {
+  Comercial: [
+    "Venda concluida",
+    "Lead potencial em andamento",
+    "Sem cobertura",
+    "Cliente parou de responder",
+    "Contato invalido",
+    "Sem interesse",
+    "Retorno agendado",
+  ],
+  Atendimento: [
+    "Resolvido no primeiro contato",
+    "Escalado para visita tecnica",
+    "OS aberta",
+    "Aguardando cliente",
+    "Nao resolvido",
+    "Orientacao de upgrade",
+  ],
+  Retencao: [
+    "Retido",
+    "Cancelado",
+    "Pendente",
+    "Mudanca sem cobertura",
+    "Preco",
+    "Instabilidade/conexao",
+    "Insatisfacao com atendimento",
+  ],
+};
+
+const processSteps: Record<Sector, ProcessStep[]> = {
+  Comercial: [
+    {
+      name: "Saudacao e identificacao",
+      weight: 1,
+      status: "Cumpriu",
+      score: 9.4,
+      evidence: "00:12 - 'Boa tarde, meu nome e Ana, falo da Uai Fibra.'",
+      guidance: "Mantenha identificacao clara no primeiro contato.",
+    },
+    {
+      name: "Descoberta da necessidade",
+      weight: 2,
+      status: "Nao cumpriu",
+      score: 4.8,
+      evidence: "01:40 - Plano foi ofertado antes de validar uso e dor.",
+      guidance: "Pergunte uso, quantidade de pessoas e problema atual antes da oferta.",
+    },
+    {
+      name: "Validacao de cobertura",
+      weight: 2,
+      status: "Cumpriu",
+      score: 10,
+      evidence: "03:08 - Consulta de cobertura registrada no IXC simulado.",
+      guidance: "Continue confirmando endereco antes da proposta.",
+    },
+    {
+      name: "Tratamento de objecoes",
+      weight: 2,
+      status: "Incerto",
+      score: 6.6,
+      evidence: "06:18 - Cliente mencionou preco, mas nao houve comparacao de valor.",
+      guidance: "Conecte preco a beneficio e necessidade observada.",
+    },
+  ],
+  Atendimento: [
+    {
+      name: "Acolhimento e empatia",
+      weight: 1,
+      status: "Cumpriu",
+      score: 9.2,
+      evidence: "00:22 - Atendente reconheceu a frustracao do cliente.",
+      guidance: "Boa abertura; mantenha tom calmo.",
+    },
+    {
+      name: "Diagnostico e testes",
+      weight: 3,
+      status: "Cumpriu",
+      score: 8.6,
+      evidence: "02:31 - Teste de sinal e reinicio do roteador orientados.",
+      guidance: "Registre resultados do teste no protocolo.",
+    },
+    {
+      name: "Confirmacao de resolucao",
+      weight: 2,
+      status: "Nao cumpriu",
+      score: 4.2,
+      evidence: "08:10 - Atendimento encerrado sem perguntar se a conexao voltou.",
+      guidance: "Antes de encerrar, confirme se o problema do cliente foi resolvido.",
+    },
+    {
+      name: "Escalonamento ou OS",
+      weight: 2,
+      status: "Cumpriu",
+      score: 8.8,
+      evidence: "09:02 - OS 74821 aberta para visita tecnica.",
+      guidance: "Informe prazo e proxima etapa com clareza.",
+    },
+  ],
+  Retencao: [
+    {
+      name: "Motivo do cancelamento",
+      weight: 3,
+      status: "Cumpriu",
+      score: 9.1,
+      evidence: "00:54 - Cliente informou instabilidade recorrente.",
+      guidance: "Classifique motivo antes de propor desconto.",
+    },
+    {
+      name: "Consulta historico e OS",
+      weight: 2,
+      status: "Cumpriu",
+      score: 8.3,
+      evidence: "02:19 - Historico de 3 OS em 14 dias consultado.",
+      guidance: "Relacione visitas anteriores ao plano de acao.",
+    },
+    {
+      name: "Tratar causa antes do desconto",
+      weight: 3,
+      status: "Nao cumpriu",
+      score: 3.8,
+      evidence: "04:16 - Desconto ofertado sem plano tecnico para instabilidade.",
+      guidance: "Resolva a causa raiz antes de negociar preco.",
+    },
+    {
+      name: "Confirmar decisao e desfecho",
+      weight: 1,
+      status: "Cumpriu",
+      score: 8.9,
+      evidence: "08:44 - Cliente aceitou visita e retorno em 48h.",
+      guidance: "Registre compromisso e responsavel.",
+    },
+  ],
+};
+
+const pendingDecisions = [
+  "Tempo de toque depende da API do PBX/Fortics.",
+  "Campos IXC e correlacao de OS dependem da integracao real.",
+  "Janela multicanal esta configurada em 24 horas e precisa validacao.",
+  "OCR de documentos pessoais fica bloqueado na versao inicial por LGPD.",
+  "500 analises mensais sao cota administrativa configuravel.",
+];
+
+function pseudoRandom(seed: number) {
+  const value = Math.sin(seed * 9301 + 49297) * 233280;
+  return value - Math.floor(value);
+}
+
+function pick<T>(items: T[], seed: number) {
+  return items[Math.floor(pseudoRandom(seed) * items.length) % items.length];
+}
+
+function generateConversations(): Conversation[] {
+  const rows: Conversation[] = [];
+  const today = new Date("2026-07-11T12:00:00-03:00");
+
+  for (let index = 0; index < 1000; index += 1) {
+    const sector = pick<Sector>(["Comercial", "Atendimento", "Retencao"], index + 2);
+    const channel = pick<Channel>(
+      ["WhatsApp", "Chatbot", "Audio", "Ligacao", "Multicanal"],
+      index + 7,
+    );
+    const attendant = attendantNames[index % attendantNames.length];
+    const team =
+      sector === "Comercial"
+        ? "Comercial Norte"
+        : sector === "Atendimento"
+          ? pick(["Suporte N1", "Qualidade"], index + 9)
+          : "Retencao";
+    const daysAgo = Math.floor(pseudoRandom(index + 11) * 90);
+    const start = new Date(today);
+    start.setDate(today.getDate() - daysAgo);
+    start.setHours(8 + Math.floor(pseudoRandom(index + 13) * 11));
+    start.setMinutes(Math.floor(pseudoRandom(index + 17) * 60));
+    const duration = 4 + Math.floor(pseudoRandom(index + 19) * 42);
+    const end = new Date(start.getTime() + duration * 60 * 1000);
+    const eligible =
+      !["Sem cobertura", "Contato invalido", "Cliente parou de responder"].includes(
+        pick(classificationBySector[sector], index + 23),
+      ) || pseudoRandom(index + 3) > 0.55;
+    const base = 3 + pseudoRandom(index + 29) * 7;
+    const score = eligible ? Number(base.toFixed(1)) : Number((4.5 + pseudoRandom(index) * 3).toFixed(1));
+    const adherence = eligible
+      ? Math.min(99, Math.round(score * 9.5 + pseudoRandom(index + 31) * 9))
+      : Math.round(42 + pseudoRandom(index + 32) * 30);
+    const classification = pick(classificationBySector[sector], index + 23);
+    const recurrences =
+      index % 57 === 0 ? 6 : index % 19 === 0 ? 3 : Math.floor(pseudoRandom(index + 37) * 2);
+    const hasCriticalAlert = score < 5.2 || recurrences >= 3 || index % 41 === 0;
+
+    rows.push({
+      id: `att-${String(index + 1).padStart(4, "0")}`,
+      protocol: `UAI-${String(93000 + index)}`,
+      start,
+      end,
+      client: index % 57 === 0 ? "Cliente com reincidencia alta" : `Cliente ${String(index + 1).padStart(4, "0")}`,
+      maskedPhone: `(**) *****-${String(1000 + (index * 37) % 8999)}`,
+      attendant,
+      team,
+      sector,
+      channel,
+      duration,
+      classification,
+      eligible,
+      ineligibleReason: eligible
+        ? "Elegivel para avaliacao"
+        : classification === "Sem cobertura"
+          ? "Lead sem cobertura nao penaliza conversao"
+          : "Interacao sem resposta suficiente do cliente",
+      score,
+      adherence,
+      sentiment:
+        hasCriticalAlert && score < 5.2
+          ? "Critico"
+          : recurrences >= 3
+            ? "Atencao"
+            : "Baixa tensao",
+      resolution:
+        sector === "Comercial"
+          ? classification === "Venda concluida"
+            ? "Resolvido"
+            : classification === "Lead potencial em andamento"
+              ? "Parcial"
+              : "Indeterminado"
+          : score > 7.5
+            ? "Resolvido"
+            : score > 5.5
+              ? "Parcial"
+              : "Nao resolvido",
+      recurrences,
+      alerts: hasCriticalAlert
+        ? [
+            score < 5.2 ? "Nota abaixo do limite" : "Alta reincidencia",
+            index % 41 === 0 ? "Baixa confianca da IA" : "Risco operacional",
+          ]
+        : [],
+      reviewStatus:
+        index % 31 === 0
+          ? "Contestado"
+          : index % 13 === 0
+            ? "Atribuido"
+            : index % 5 === 0
+              ? "Revisado"
+              : "Pendente",
+      confidence: Number((0.62 + pseudoRandom(index + 43) * 0.36).toFixed(2)),
+      processVersion: `${sector.toLowerCase()}-v${1 + (index % 3)}.${index % 4}`,
+      process: `Processo ${sector}`,
+      firstResponse: 1 + Math.floor(pseudoRandom(index + 47) * 18),
+      responseTime: 3 + Math.floor(pseudoRandom(index + 53) * 28),
+      isMultichannelCase: channel === "Multicanal" || index % 57 === 0,
+    });
+  }
+
+  return rows.sort((a, b) => b.start.getTime() - a.start.getTime());
+}
+
+function formatDate(date: Date) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function percent(value: number) {
+  return `${Math.round(value)}%`;
+}
+
+function average(values: number[]) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function trend(now: number, previous: number) {
+  const delta = now - previous;
+  return `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}`;
+}
+
+function buildAlerts(conversations: Conversation[]): AlertItem[] {
+  return conversations
+    .filter((conversation) => conversation.alerts.length > 0)
+    .slice(0, 32)
+    .map((conversation, index) => ({
+      id: `alert-${index + 1}`,
+      type: conversation.alerts[0],
+      severity:
+        conversation.score < 4.8 || conversation.recurrences >= 5
+          ? "Critico"
+          : conversation.score < 6
+            ? "Alto"
+            : conversation.confidence < 0.72
+              ? "Medio"
+              : "Baixo",
+      owner: index % 3 === 0 ? "Gestor Suporte" : index % 3 === 1 ? "Qualidade" : "Comercial",
+      due: index % 2 === 0 ? "Hoje" : "Amanha",
+      status: index % 5 === 0 ? "Resolvido" : index % 3 === 0 ? "Reconhecido" : "Aberto",
+      evidence: `${conversation.protocol}: ${conversation.alerts.join(", ")}`,
+      conversationId: conversation.id,
+    }));
+}
+
+const navItems = [
+  { id: "overview", label: "Visao geral", icon: LayoutDashboard, count: 0 },
+  { id: "conversations", label: "Conversas", icon: MessageCircle, count: 18 },
+  { id: "commercial", label: "Comercial", icon: Target, count: 4 },
+  { id: "support", label: "Atendimento", icon: Headphones, count: 9 },
+  { id: "retention", label: "Retencao", icon: ShieldCheck, count: 5 },
+  { id: "recurrence", label: "Reincidencia", icon: RefreshCw, count: 7 },
+  { id: "agents", label: "Atendentes", icon: Users, count: 6 },
+  { id: "adherence", label: "Aderencia", icon: ClipboardCheck, count: 0 },
+  { id: "alerts", label: "Alertas e insights", icon: Bell, count: 23 },
+  { id: "ai", label: "Agente de IA", icon: Bot, count: 0 },
+  { id: "processes", label: "Processos", icon: FileText, count: 3 },
+  { id: "reports", label: "Relatorios", icon: BarChart3, count: 0 },
+  { id: "integrations", label: "Integracoes", icon: Activity, count: 2 },
+  { id: "admin", label: "Administracao", icon: Settings, count: 0 },
+];
+
+export default function Home() {
+  const conversations = useMemo(() => generateConversations(), []);
+  const alerts = useMemo(() => buildAlerts(conversations), [conversations]);
+  const [activeView, setActiveView] = useState("overview");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [period, setPeriod] = useState("30 dias");
+  const [sector, setSector] = useState("Todos");
+  const [channel, setChannel] = useState("Todos");
+  const [search, setSearch] = useState("");
+  const [onlyEligible, setOnlyEligible] = useState(false);
+  const [selectedId, setSelectedId] = useState(conversations[0]?.id ?? "");
+  const [page, setPage] = useState(1);
+  const [loadingState, setLoadingState] = useState<"ready" | "loading" | "error" | "empty">("ready");
+  const [agentQuestion, setAgentQuestion] = useState("Como devo tratar uma objecao de preco na retencao?");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const view = params.get("view");
+    const query = params.get("q");
+    const nextSector = params.get("sector");
+    if (view) setActiveView(view);
+    if (query) setSearch(query);
+    if (nextSector) setSector(nextSector);
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set("view", activeView);
+    if (search) params.set("q", search);
+    if (sector !== "Todos") params.set("sector", sector);
+    window.history.replaceState(null, "", `?${params.toString()}`);
+  }, [activeView, search, sector]);
+
+  const filtered = useMemo(() => {
+    const periodDays = period === "Hoje" ? 1 : period === "7 dias" ? 7 : period === "14 dias" ? 14 : period === "Mes atual" ? 30 : 90;
+    const maxDate = conversations[0]?.start ?? new Date();
+    const minDate = new Date(maxDate);
+    minDate.setDate(maxDate.getDate() - periodDays);
+    return conversations.filter((conversation) => {
+      const matchesPeriod = conversation.start >= minDate;
+      const matchesSector = sector === "Todos" || conversation.sector === sector;
+      const matchesChannel = channel === "Todos" || conversation.channel === channel;
+      const matchesEligible = !onlyEligible || conversation.eligible;
+      const query = search.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        [
+          conversation.client,
+          conversation.protocol,
+          conversation.attendant,
+          conversation.classification,
+          conversation.sector,
+          conversation.channel,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      return matchesPeriod && matchesSector && matchesChannel && matchesEligible && matchesSearch;
+    });
+  }, [channel, conversations, onlyEligible, period, search, sector]);
+
+  const selected = filtered.find((conversation) => conversation.id === selectedId) ?? filtered[0] ?? conversations[0];
+
+  const metrics = useMemo(() => {
+    const eligible = filtered.filter((conversation) => conversation.eligible);
+    const processed = filtered.filter((conversation) => conversation.confidence >= 0.66);
+    const critical = filtered.filter((conversation) => conversation.alerts.length > 0 && conversation.score < 6);
+    const resolved = filtered.filter((conversation) => conversation.resolution === "Resolvido");
+    return [
+      {
+        label: "Atendimentos recebidos",
+        value: filtered.length.toLocaleString("pt-BR"),
+        detail: "1000 gerados em 90 dias; filtro atual aplicado.",
+        formula: "contagem de atendimentos importados",
+        icon: MessageCircle,
+      },
+      {
+        label: "Processado pela IA",
+        value: `${processed.length} / ${percent((processed.length / Math.max(filtered.length, 1)) * 100)}`,
+        detail: "Analises com schema validado e confianca minima.",
+        formula: "processados / recebidos",
+        icon: Sparkles,
+      },
+      {
+        label: "Elegiveis",
+        value: eligible.length.toLocaleString("pt-BR"),
+        detail: "Inelegiveis nao penalizam desempenho.",
+        formula: "atendimentos aplicaveis ao processo",
+        icon: CheckCircle2,
+      },
+      {
+        label: "Nota media",
+        value: average(eligible.map((item) => item.score)).toFixed(1),
+        detail: "Media ponderada por atendimentos elegiveis.",
+        formula: "soma(nota etapa * peso) / pesos aplicaveis",
+        icon: Star,
+      },
+      {
+        label: "Aderencia media",
+        value: percent(average(eligible.map((item) => item.adherence))),
+        detail: "Somente casos com processo aplicavel.",
+        formula: "etapas cumpridas ponderadas / etapas aplicaveis",
+        icon: ClipboardCheck,
+      },
+      {
+        label: "Primeira resposta",
+        value: `${Math.round(average(filtered.map((item) => item.firstResponse)))} min`,
+        detail: "Fonte: Blip/WhatsApp e PBX quando disponivel.",
+        formula: "inicio ate primeira resposta humana",
+        icon: Clock3,
+      },
+      {
+        label: "Taxa de resolucao",
+        value: percent((resolved.length / Math.max(filtered.length, 1)) * 100),
+        detail: "Resolvido segundo evidencias do atendimento.",
+        formula: "resolvidos / analisados",
+        icon: UserCheck,
+      },
+      {
+        label: "Alertas criticos",
+        value: critical.length.toString(),
+        detail: "Abertos, reconhecidos ou em prazo.",
+        formula: "alertas com severidade alta ou critica",
+        icon: AlertTriangle,
+      },
+    ];
+  }, [filtered]);
+
+  const trendData = useMemo(() => {
+    const buckets = new Map<string, { date: string; volume: number; scoreTotal: number; adherenceTotal: number }>();
+    filtered.forEach((conversation) => {
+      const label = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(conversation.start);
+      const current = buckets.get(label) ?? { date: label, volume: 0, scoreTotal: 0, adherenceTotal: 0 };
+      current.volume += 1;
+      current.scoreTotal += conversation.score;
+      current.adherenceTotal += conversation.adherence;
+      buckets.set(label, current);
+    });
+    return Array.from(buckets.values())
+      .slice(0, 14)
+      .reverse()
+      .map((bucket) => ({
+        date: bucket.date,
+        volume: bucket.volume,
+        nota: Number((bucket.scoreTotal / bucket.volume).toFixed(1)),
+        aderencia: Math.round(bucket.adherenceTotal / bucket.volume),
+      }));
+  }, [filtered]);
+
+  const classificationData = useMemo(() => {
+    const counts = new Map<string, number>();
+    filtered.forEach((conversation) => counts.set(conversation.classification, (counts.get(conversation.classification) ?? 0) + 1));
+    return Array.from(counts.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 7);
+  }, [filtered]);
+
+  const attendantRanking = useMemo(() => {
+    return attendantNames
+      .map((name) => {
+        const rows = filtered.filter((conversation) => conversation.attendant === name && conversation.eligible);
+        return {
+          name,
+          team: rows[0]?.team ?? "Sem amostra",
+          volume: rows.length,
+          score: average(rows.map((conversation) => conversation.score)),
+          adherence: average(rows.map((conversation) => conversation.adherence)),
+          trend: trend(average(rows.slice(0, 5).map((conversation) => conversation.score)), average(rows.slice(5, 10).map((conversation) => conversation.score))),
+        };
+      })
+      .filter((row) => row.volume > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8);
+  }, [filtered]);
+
+  const paginated = filtered.slice((page - 1) * 12, page * 12);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / 12));
+  const activeTitle =
+    activeView === "detail"
+      ? "Detalhe do atendimento"
+      : navItems.find((item) => item.id === activeView)?.label ?? "Visao geral";
+
+  const openMetric = (label: string) => {
+    setActiveView("conversations");
+    if (label.includes("Alertas")) setSearch("Nota abaixo");
+    if (label.includes("Elegiveis")) setOnlyEligible(true);
+  };
+
+  const simulateLoading = (state: "loading" | "error" | "empty") => {
+    setLoadingState(state);
+    window.setTimeout(() => setLoadingState("ready"), 950);
+  };
+
+  return (
+    <main className="app-shell">
+      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`} aria-label="Navegacao principal">
+        <button className="brand" onClick={() => setActiveView("overview")} aria-label="Ir para visao geral">
+          <span className="brand-mark">{appConfig.logoText}</span>
+          <span>
+            <strong>{appConfig.productName}</strong>
+            <small>{appConfig.company}</small>
+          </span>
+        </button>
+        <nav>
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                className={activeView === item.id ? "active" : ""}
+                onClick={() => {
+                  setActiveView(item.id);
+                  setSidebarOpen(false);
+                }}
+                title={item.label}
+              >
+                <Icon size={18} aria-hidden="true" />
+                <span>{item.label}</span>
+                {item.count > 0 ? <b>{item.count}</b> : null}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="quota-panel">
+          <span>Cota mensal</span>
+          <strong>384 / 500 analises</strong>
+          <div className="quota-bar">
+            <i style={{ width: "77%" }} />
+          </div>
+          <small>Pacotes adicionais configuraveis por setor.</small>
+        </div>
+      </aside>
+
+      <section className="workspace">
+        <header className="topbar">
+          <button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu">
+            <Columns3 size={18} />
+          </button>
+          <div className="global-search">
+            <Search size={17} aria-hidden="true" />
+            <input
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Buscar cliente, protocolo, atendente, assunto ou transcricao"
+              aria-label="Busca global"
+            />
+          </div>
+          <select value={period} onChange={(event) => setPeriod(event.target.value)} aria-label="Periodo">
+            {["Hoje", "7 dias", "14 dias", "30 dias", "Mes atual", "90 dias"].map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </select>
+          <select value={sector} onChange={(event) => setSector(event.target.value)} aria-label="Setor">
+            {["Todos", "Comercial", "Atendimento", "Retencao"].map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </select>
+          <select value={channel} onChange={(event) => setChannel(event.target.value)} aria-label="Canal">
+            {["Todos", "WhatsApp", "Chatbot", "Audio", "Ligacao", "Multicanal"].map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </select>
+          <button className="sync-pill" title="Ultima sincronizacao: 11/07/2026 11:54">
+            <Activity size={16} />
+            Sincronizado
+          </button>
+          <button className="icon-button" aria-label="Notificacoes">
+            <Bell size={18} />
+          </button>
+          <button className="user-menu" aria-label="Menu do usuario">
+            <span>GC</span>
+            Gestor
+          </button>
+        </header>
+
+        <div className="view-header">
+          <div>
+            <p className="eyebrow">Operacao auditavel com dados ficticios</p>
+            <h1>{activeTitle}</h1>
+          </div>
+          <div className="header-actions">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={onlyEligible}
+                onChange={(event) => setOnlyEligible(event.target.checked)}
+              />
+              Apenas elegiveis
+            </label>
+            <button onClick={() => simulateLoading("loading")}>
+              <RefreshCw size={16} />
+              Atualizar
+            </button>
+            <button onClick={() => simulateLoading("error")}>
+              <AlertTriangle size={16} />
+              Estado erro
+            </button>
+            <button onClick={() => simulateLoading("empty")}>
+              <Filter size={16} />
+              Estado vazio
+            </button>
+          </div>
+        </div>
+
+        {loadingState !== "ready" ? (
+          <StatePanel state={loadingState} />
+        ) : (
+          <>
+            {activeView === "overview" && (
+              <Overview
+                metrics={metrics}
+                onMetricClick={openMetric}
+                trendData={trendData}
+                classificationData={classificationData}
+                ranking={attendantRanking}
+                alerts={alerts}
+                filteredCount={filtered.length}
+              />
+            )}
+            {activeView === "conversations" && (
+              <Conversations
+                rows={paginated}
+                total={filtered.length}
+                page={page}
+                totalPages={totalPages}
+                selectedId={selected?.id}
+                onPage={setPage}
+                onOpen={(id) => {
+                  setSelectedId(id);
+                  setActiveView("detail");
+                }}
+                onAssign={(id) => setSelectedId(id)}
+              />
+            )}
+            {activeView === "detail" && selected && <ConversationDetail conversation={selected} />}
+            {["commercial", "support", "retention"].includes(activeView) && (
+              <SectorView
+                sector={activeView === "commercial" ? "Comercial" : activeView === "support" ? "Atendimento" : "Retencao"}
+                rows={filtered}
+                onOpen={(id) => {
+                  setSelectedId(id);
+                  setActiveView("detail");
+                }}
+              />
+            )}
+            {activeView === "recurrence" && <Recurrence rows={filtered} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
+            {activeView === "agents" && <Agents ranking={attendantRanking} rows={filtered} />}
+            {activeView === "adherence" && <Adherence rows={filtered} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
+            {activeView === "alerts" && <AlertsCenter alerts={alerts} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
+            {activeView === "ai" && (
+              <AiAgent
+                question={agentQuestion}
+                setQuestion={setAgentQuestion}
+                selected={selected}
+              />
+            )}
+            {activeView === "processes" && <Processes />}
+            {activeView === "reports" && <Reports rows={filtered} />}
+            {activeView === "integrations" && <Integrations />}
+            {activeView === "admin" && <Admin />}
+          </>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function StatePanel({ state }: { state: "loading" | "error" | "empty" }) {
+  if (state === "loading") {
+    return (
+      <div className="grid skeleton-grid" role="status" aria-live="polite">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div className="skeleton-card" key={index} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <section className="state-panel">
+      {state === "error" ? <AlertTriangle size={28} /> : <Search size={28} />}
+      <h2>{state === "error" ? "Erro recuperavel na integracao" : "Nenhum resultado para os filtros"}</h2>
+      <p>
+        {state === "error"
+          ? "O conector simulado retornou falha temporaria. A fila preserva idempotencia e permite tentar novamente."
+          : "A busca nao encontrou atendimentos com estes filtros. Limpe filtros ou salve esta visualizacao vazia."}
+      </p>
+      <button> Tentar novamente </button>
+    </section>
+  );
+}
+
+function Overview({
+  metrics,
+  onMetricClick,
+  trendData,
+  classificationData,
+  ranking,
+  alerts,
+  filteredCount,
+}: {
+  metrics: Array<{ label: string; value: string; detail: string; formula: string; icon: typeof Activity }>;
+  onMetricClick: (label: string) => void;
+  trendData: Array<{ date: string; volume: number; nota: number; aderencia: number }>;
+  classificationData: Array<{ name: string; value: number }>;
+  ranking: Array<{ name: string; team: string; volume: number; score: number; adherence: number; trend: string }>;
+  alerts: AlertItem[];
+  filteredCount: number;
+}) {
+  return (
+    <div className="stack">
+      <section className="metric-grid">
+        {metrics.map((metric) => {
+          const Icon = metric.icon;
+          return (
+            <button className="metric-card" key={metric.label} onClick={() => onMetricClick(metric.label)}>
+              <span className="metric-icon">
+                <Icon size={18} />
+              </span>
+              <small title={`Formula: ${metric.formula}. Fonte: dados de demo. Atualizado em 11/07/2026 11:54.`}>{metric.label}</small>
+              <strong>{metric.value}</strong>
+              <em>{metric.detail}</em>
+            </button>
+          );
+        })}
+      </section>
+
+      <section className="content-grid two-one">
+        <article className="panel">
+          <PanelTitle icon={LineChart} title="Volume e nota por periodo" subtitle={`${filteredCount} atendimentos analisados; inelegiveis ficam fora da media de desempenho.`} />
+          <div className="chart-box">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={trendData}>
+                <CartesianGrid stroke="#352245" vertical={false} />
+                <XAxis dataKey="date" stroke="#b9a8c7" />
+                <YAxis yAxisId="left" stroke="#b9a8c7" />
+                <YAxis yAxisId="right" orientation="right" domain={[0, 10]} stroke="#b9a8c7" />
+                <Tooltip contentStyle={{ background: "#211129", border: "1px solid #513160", color: "#fff" }} />
+                <Legend />
+                <Bar yAxisId="left" dataKey="volume" fill={appConfig.colors.accent} radius={[4, 4, 0, 0]} />
+                <Line yAxisId="right" type="monotone" dataKey="nota" stroke={appConfig.colors.success} strokeWidth={3} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </article>
+
+        <article className="panel">
+          <PanelTitle icon={BarChart3} title="Classificacoes" subtitle="Taxonomia personalizavel e versionada." />
+          <div className="chart-box small">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={classificationData} dataKey="value" nameKey="name" innerRadius={54} outerRadius={86} paddingAngle={2}>
+                  {classificationData.map((_, index) => (
+                    <Cell key={index} fill={["#ff8a22", "#36d399", "#8b5cf6", "#f5c542", "#ff5c77", "#38bdf8", "#a3e635"][index % 7]} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ background: "#211129", border: "1px solid #513160", color: "#fff" }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="legend-list">
+            {classificationData.slice(0, 5).map((item) => (
+              <span key={item.name}>
+                <i />
+                {item.name}: {item.value}
+              </span>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      <section className="content-grid">
+        <article className="panel">
+          <PanelTitle icon={Users} title="Ranking justo de atendentes" subtitle="Sinaliza amostra pequena e usa somente atendimentos elegiveis." />
+          <div className="ranking-list">
+            {ranking.map((row, index) => (
+              <div className="ranking-row" key={row.name}>
+                <b>{index + 1}</b>
+                <span>
+                  <strong>{row.name}</strong>
+                  <small>{row.team} - {row.volume < 8 ? "amostra pequena" : `${row.volume} casos elegiveis`}</small>
+                </span>
+                <em>{row.score.toFixed(1)}</em>
+                <small>{percent(row.adherence)} aderencia</small>
+                <small className={Number(row.trend) >= 0 ? "positive" : "negative"}>{row.trend}</small>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <PanelTitle icon={ClipboardCheck} title="Etapas com menor aderencia" subtitle="Clique nas celulas nas telas de aderencia para chegar aos atendimentos." />
+          <div className="step-bars">
+            {[
+              ["Confirmacao de resolucao", 58],
+              ["Descoberta da necessidade", 63],
+              ["Tratar causa antes do desconto", 49],
+              ["Registro correto no ERP", 71],
+            ].map(([name, value]) => (
+              <div key={name}>
+                <span>{name}</span>
+                <b>{value}%</b>
+                <div><i style={{ width: `${value}%` }} /></div>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <PanelTitle icon={AlertTriangle} title="Alertas recentes" subtitle="Ordenados por severidade, impacto e prazo." />
+          <div className="alert-list">
+            {alerts.slice(0, 6).map((alert) => (
+              <div className={`alert-row ${alert.severity.toLowerCase()}`} key={alert.id}>
+                <span>{alert.severity}</span>
+                <strong>{alert.type}</strong>
+                <small>{alert.evidence}</small>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+    </div>
+  );
+}
+
+function Conversations({
+  rows,
+  total,
+  page,
+  totalPages,
+  selectedId,
+  onPage,
+  onOpen,
+  onAssign,
+}: {
+  rows: Conversation[];
+  total: number;
+  page: number;
+  totalPages: number;
+  selectedId?: string;
+  onPage: (page: number) => void;
+  onOpen: (id: string) => void;
+  onAssign: (id: string) => void;
+}) {
+  return (
+    <section className="panel table-panel">
+      <div className="table-toolbar">
+        <PanelTitle icon={MessageCircle} title="Busca e auditoria de alto volume" subtitle={`${total.toLocaleString("pt-BR")} atendimentos nos filtros atuais.`} />
+        <div>
+          <button><SlidersHorizontal size={16} /> Colunas</button>
+          <button><Download size={16} /> Exportar</button>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Inicio</th>
+              <th>Protocolo</th>
+              <th>Cliente</th>
+              <th>Atendente</th>
+              <th>Setor</th>
+              <th>Canal</th>
+              <th>Classificacao IA</th>
+              <th>Elegivel</th>
+              <th>Nota</th>
+              <th>Aderencia</th>
+              <th>Resolucao</th>
+              <th>Alertas</th>
+              <th>Revisao</th>
+              <th>Acoes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className={row.id === selectedId ? "selected" : ""}>
+                <td>{formatDate(row.start)}</td>
+                <td>{row.protocol}</td>
+                <td>
+                  <span className="masked"><Lock size={13} /> {row.client}</span>
+                  <small>{row.maskedPhone}</small>
+                </td>
+                <td>{row.attendant}<small>{row.team}</small></td>
+                <td>{row.sector}<small>{row.processVersion}</small></td>
+                <td><ChannelPill channel={row.channel} /></td>
+                <td>{row.classification}<small>{Math.round(row.confidence * 100)}% confianca</small></td>
+                <td>{row.eligible ? "Sim" : "Nao"}<small>{row.ineligibleReason}</small></td>
+                <td><ScoreBadge score={row.score} /></td>
+                <td>{percent(row.adherence)}</td>
+                <td>{row.resolution}</td>
+                <td>{row.alerts.length}</td>
+                <td>{row.reviewStatus}</td>
+                <td>
+                  <div className="row-actions">
+                    <button onClick={() => onOpen(row.id)} title="Abrir detalhe"><Eye size={15} /></button>
+                    <button onClick={() => onAssign(row.id)} title="Atribuir revisao"><UserCheck size={15} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <footer className="pagination">
+        <span>Pagina {page} de {totalPages}</span>
+        <button disabled={page === 1} onClick={() => onPage(Math.max(1, page - 1))}>Anterior</button>
+        <button disabled={page === totalPages} onClick={() => onPage(Math.min(totalPages, page + 1))}>Proxima</button>
+      </footer>
+    </section>
+  );
+}
+
+function ConversationDetail({ conversation }: { conversation: Conversation }) {
+  const [tab, setTab] = useState("summary");
+  const steps = processSteps[conversation.sector];
+
+  return (
+    <section className="detail-layout">
+      <article className="panel detail-hero">
+        <div>
+          <p className="eyebrow">{conversation.protocol} - {conversation.channel} - {conversation.processVersion}</p>
+          <h2>{conversation.client}</h2>
+          <p>{conversation.attendant} em {conversation.team} - {formatDate(conversation.start)} - {conversation.duration} min</p>
+          <div className="pill-row">
+            <span>{conversation.classification}</span>
+            <span>{conversation.eligible ? "Elegivel" : "Inelegivel"}</span>
+            <span>{conversation.resolution}</span>
+            <span>{conversation.sentiment}</span>
+          </div>
+        </div>
+        <div className="score-meter" style={{ "--score": `${conversation.score * 10}%` } as CSSProperties}>
+          <strong>{conversation.score.toFixed(1)}</strong>
+          <small>nota IA</small>
+        </div>
+        <div className="detail-actions">
+          <button><MessageCircle size={16} /> Dar feedback</button>
+          <button><AlertTriangle size={16} /> Contestar avaliacao</button>
+          <button><CheckCircle2 size={16} /> Revisar</button>
+          <button><ChevronRight size={16} /> Abrir no IXC</button>
+        </div>
+      </article>
+
+      <article className="panel">
+        <div className="tabs" role="tablist">
+          {[
+            ["summary", "Resumo da analise"],
+            ["steps", "Avaliacao por etapas"],
+            ["transcript", "Transcricao"],
+            ["journey", "Jornada e reincidencia"],
+            ["audit", "Metadados e auditoria"],
+          ].map(([id, label]) => (
+            <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "summary" && (
+          <div className="summary-grid">
+            {[
+              ["Resumo", `Cliente buscou ${conversation.sector === "Comercial" ? "contratacao de internet" : conversation.sector === "Atendimento" ? "solucao para instabilidade" : "cancelamento ou renegociacao"}. Desfecho: ${conversation.resolution.toLowerCase()}.`],
+              ["Pontos fortes", "Atendente manteve linguagem clara, registrou protocolo e explicou proximos passos quando havia base no processo."],
+              ["Melhorias sugeridas", "Confirmar necessidade antes da oferta e validar resolucao antes do encerramento."],
+              ["Riscos e oportunidades", conversation.recurrences >= 3 ? "Cliente reincidente com risco de churn; recomenda-se contato ativo apos OS." : "Sem risco critico, mas ha oportunidade de coaching por etapa."],
+              ["Proxima acao", conversation.alerts.length ? "Atribuir revisao ao gestor e registrar feedback especifico." : "Marcar como revisado apos validacao amostral."],
+              ["Diagnostico de resolucao", conversation.resolution],
+            ].map(([title, body]) => (
+              <div className="info-card" key={title}>
+                <h3>{title}</h3>
+                <p>{body}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === "steps" && (
+          <div className="step-list">
+            {steps.map((step) => (
+              <div className="step-card" key={step.name}>
+                <div>
+                  <h3>{step.name}</h3>
+                  <p>Peso {step.weight} - criterio versionado do processo {conversation.processVersion}</p>
+                </div>
+                <ScoreBadge score={step.score} />
+                <span className={`status ${step.status.replace(" ", "-").toLowerCase()}`}>{step.status}</span>
+                <p>{step.evidence}</p>
+                <small>{step.guidance}</small>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === "transcript" && <Transcript conversation={conversation} />}
+        {tab === "journey" && <Journey conversation={conversation} />}
+        {tab === "audit" && <Audit conversation={conversation} />}
+      </article>
+    </section>
+  );
+}
+
+function Transcript({ conversation }: { conversation: Conversation }) {
+  const lines = [
+    ["00:02", "Sistema", "Atendimento importado do Blip e relacionado ao protocolo."],
+    ["00:12", "Atendente", `Ola, sou ${conversation.attendant}. Vou te ajudar com esse atendimento.`],
+    ["00:48", "Cliente", conversation.sector === "Comercial" ? "Quero saber se tem internet no meu endereco." : "Minha internet caiu de novo e ja abri chamado antes."],
+    ["02:31", "Atendente", "Vou validar seus dados, consultar o historico e fazer alguns testes."],
+    ["04:16", "Cliente", "Preciso de uma solucao definitiva, nao apenas reiniciar o roteador."],
+    ["08:44", "Atendente", "Registrei a tratativa e o proximo passo. Voce recebera retorno no prazo informado."],
+  ];
+
+  return (
+    <div className="transcript">
+      <div className="audio-player">
+        <Phone size={18} />
+        <span>Player sincronizado permitido para perfis autorizados</span>
+        <div><i style={{ width: `${conversation.duration * 2}%` }} /></div>
+      </div>
+      {lines.map(([time, actor, text], index) => (
+        <button className={`message ${actor.toLowerCase()}`} key={`${time}-${index}`}>
+          <b>{time}</b>
+          <span>{actor}</span>
+          <p>{text}</p>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Journey({ conversation }: { conversation: Conversation }) {
+  return (
+    <div className="timeline">
+      {[
+        ["D-13", "WhatsApp", "Cliente relatou lentidao e recebeu orientacao inicial."],
+        ["D-08", "Ligacao", "OS aberta apos testes. Visita tecnica pendente."],
+        ["D-03", "Multicanal", "Cliente retornou sem resolucao percebida."],
+        ["Hoje", conversation.channel, `Atendimento atual classificado como ${conversation.classification}.`],
+      ].map(([date, channel, text]) => (
+        <div key={`${date}-${channel}`}>
+          <span>{date}</span>
+          <strong>{channel}</strong>
+          <p>{text}</p>
+        </div>
+      ))}
+      <aside className="risk-box">
+        <strong>Score de risco explicavel: {conversation.recurrences >= 3 ? "alto" : "moderado"}</strong>
+        <p>Baseado em {conversation.recurrences} contatos em 14 dias, status de resolucao e existencia de OS.</p>
+      </aside>
+    </div>
+  );
+}
+
+function Audit({ conversation }: { conversation: Conversation }) {
+  return (
+    <div className="audit-grid">
+      {[
+        ["Fontes", "Blip, PBX simulado e IXC simulado"],
+        ["IDs externos", `${conversation.protocol}, ramal-22, blip-thread-${conversation.id}`],
+        ["Versao do processo", conversation.processVersion],
+        ["Modelo/prompt", "avaliador-v1.4 / schema qa-evaluation-v2"],
+        ["Processamento", "2026-07-11 11:54 BRT"],
+        ["Confianca", `${Math.round(conversation.confidence * 100)}%`],
+        ["Revisoes", conversation.reviewStatus],
+        ["LGPD", "Telefone e dados pessoais mascarados neste perfil"],
+      ].map(([label, value]) => (
+        <div className="info-card" key={label}>
+          <h3>{label}</h3>
+          <p>{value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SectorView({ sector, rows, onOpen }: { sector: Sector; rows: Conversation[]; onOpen: (id: string) => void }) {
+  const scoped = rows.filter((row) => row.sector === sector).slice(0, 10);
+  return (
+    <section className="stack">
+      <article className="panel">
+        <PanelTitle icon={Target} title={`Operacao de ${sector}`} subtitle="Metas, conversoes e gargalos por processo." />
+        <div className="metric-grid compact">
+          <MiniStat label="Volume elegivel" value={scoped.filter((row) => row.eligible).length.toString()} />
+          <MiniStat label="Nota media" value={average(scoped.map((row) => row.score)).toFixed(1)} />
+          <MiniStat label="Aderencia" value={percent(average(scoped.map((row) => row.adherence)))} />
+          <MiniStat label="Alertas" value={scoped.reduce((sum, row) => sum + row.alerts.length, 0).toString()} />
+        </div>
+      </article>
+      <article className="panel">
+        <PanelTitle icon={MessageCircle} title="Atendimentos que sustentam os indicadores" subtitle="Abrir qualquer linha leva ao detalhe auditavel." />
+        <div className="cards-list">
+          {scoped.map((row) => (
+            <button className="case-card" key={row.id} onClick={() => onOpen(row.id)}>
+              <span><strong>{row.protocol}</strong><small>{row.client}</small></span>
+              <span>{row.classification}<small>{row.channel}</small></span>
+              <ScoreBadge score={row.score} />
+            </button>
+          ))}
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function Recurrence({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: string) => void }) {
+  const recurrent = rows.filter((row) => row.recurrences >= 3).slice(0, 12);
+  return (
+    <section className="panel">
+      <PanelTitle icon={RefreshCw} title="Clientes reincidentes em 14 dias" subtitle="Score e recomendacao sao explicaveis; nao sao tratados como verdade absoluta." />
+      <div className="cards-list">
+        {recurrent.map((row) => (
+          <button className="case-card" key={row.id} onClick={() => onOpen(row.id)}>
+            <span><strong>{row.client}</strong><small>{row.recurrences} contatos - {row.channel}</small></span>
+            <span>{row.resolution}<small>OS e historico IXC simulados</small></span>
+            <span className="risk">Ligar apos visita tecnica</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Agents({ ranking, rows }: { ranking: Array<{ name: string; team: string; volume: number; score: number; adherence: number; trend: string }>; rows: Conversation[] }) {
+  const selected = ranking[0];
+  return (
+    <section className="content-grid two-one">
+      <article className="panel">
+        <PanelTitle icon={Users} title="Lista e ranking" subtitle="Comparacao nominal pode ser desabilitada por permissao." />
+        <div className="ranking-list">
+          {ranking.map((row) => (
+            <div className="ranking-row" key={row.name}>
+              <span><strong>{row.name}</strong><small>{row.team}</small></span>
+              <em>{row.score.toFixed(1)}</em>
+              <small>{row.volume} elegiveis</small>
+              <small>{percent(row.adherence)}</small>
+            </div>
+          ))}
+        </div>
+      </article>
+      <article className="panel">
+        <PanelTitle icon={UserCheck} title={`Perfil individual: ${selected?.name ?? "Atendente"}`} subtitle="Feedback automatico exige evidencias e volume de casos." />
+        <div className="summary-grid one">
+          <MiniStat label="Nota consolidada" value={selected?.score.toFixed(1) ?? "0.0"} />
+          <MiniStat label="Aderencia" value={percent(selected?.adherence ?? 0)} />
+          <MiniStat label="Volume analisado" value={rows.filter((row) => row.attendant === selected?.name).length.toString()} />
+          <div className="info-card wide">
+            <h3>Feedback continuo</h3>
+            <p>Voce melhorou na apresentacao de planos em relacao a semana anterior, mas ainda precisa confirmar a necessidade do cliente antes de oferecer uma solucao. Base: {selected?.volume ?? 0} casos elegiveis.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function Adherence({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: string) => void }) {
+  const names = ["Saudacao", "Diagnostico", "Confirmacao", "Registro", "Escalonamento"];
+  return (
+    <section className="panel">
+      <PanelTitle icon={ClipboardCheck} title="Heatmap de aderencia" subtitle="Agregado apenas com atendimentos elegiveis e aplicaveis." />
+      <div className="heatmap">
+        {attendantNames.slice(0, 10).map((name, rowIndex) => (
+          <div className="heat-row" key={name}>
+            <strong>{name}</strong>
+            {names.map((step, cellIndex) => {
+              const value = 45 + Math.round(pseudoRandom(rowIndex * 7 + cellIndex) * 52);
+              return (
+                <button
+                  key={step}
+                  style={{ background: `color-mix(in srgb, #36d399 ${value}%, #32183f)` }}
+                  onClick={() => onOpen(rows[rowIndex + cellIndex]?.id ?? rows[0]?.id)}
+                  title={`${step}: ${value}%`}
+                >
+                  {value}%
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AlertsCenter({ alerts, onOpen }: { alerts: AlertItem[]; onOpen: (id: string) => void }) {
+  return (
+    <section className="panel">
+      <PanelTitle icon={AlertTriangle} title="Central de alertas configuravel" subtitle="Atribuir, comentar, resolver e criar tarefas de coaching." />
+      <div className="cards-list">
+        {alerts.map((alert) => (
+          <div className="case-card" key={alert.id}>
+            <span><strong>{alert.type}</strong><small>{alert.evidence}</small></span>
+            <span>{alert.severity}<small>{alert.owner} - {alert.due}</small></span>
+            <span>{alert.status}</span>
+            <button onClick={() => onOpen(alert.conversationId)}>Abrir origem</button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AiAgent({
+  question,
+  setQuestion,
+  selected,
+}: {
+  question: string;
+  setQuestion: (value: string) => void;
+  selected: Conversation;
+}) {
+  return (
+    <section className="content-grid two-one">
+      <article className="panel">
+        <PanelTitle icon={Bot} title="Agente consultivo interno" subtitle="Usa somente processos, scripts e politicas aprovadas." />
+        <textarea value={question} onChange={(event) => setQuestion(event.target.value)} aria-label="Pergunta ao agente" />
+        <div className="chat-answer">
+          <strong>Resposta com fontes internas</strong>
+          <p>Para objecao de preco, primeiro confirme o motivo principal e o historico do cliente. Se houver instabilidade recorrente, trate a causa tecnica antes de oferecer desconto. Quando houver base suficiente, compare valor percebido, plano atual e necessidade de uso. Nao prometa desconto fora da politica aprovada.</p>
+          <ul>
+            <li>Fonte: Processo Retencao v2.1, etapa "Tratar causa antes do desconto".</li>
+            <li>Fonte: Script Comercial v1.8, etapa "Tratamento de objecoes".</li>
+            <li>Contexto anexado: {selected.protocol}, dados pessoais mascarados.</li>
+          </ul>
+          <div className="pill-row">
+            <button>Resposta util</button>
+            <button>Reportar erro</button>
+          </div>
+        </div>
+      </article>
+      <article className="panel">
+        <PanelTitle icon={ShieldCheck} title="Limites da IA" subtitle="Defesas contra invencao e prompt injection." />
+        <div className="info-card wide">
+          <h3>Sem base suficiente</h3>
+          <p>Quando a pergunta exige politica nao cadastrada, o agente deve dizer que nao ha base aprovada e orientar consulta humana.</p>
+        </div>
+        <div className="info-card wide">
+          <h3>Assistencia em tempo real</h3>
+          <p>Marcada como possibilidade futura condicionada a APIs, latencia, precisao e avaliacao humana.</p>
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function Processes() {
+  const [status, setStatus] = useState("Rascunho");
+  return (
+    <section className="stack">
+      <article className="panel">
+        <PanelTitle icon={FileText} title="Editor visual de processos" subtitle="Versionamento preserva avaliacoes historicas." />
+        <div className="process-editor">
+          <label>Nome<input defaultValue="Processo Retencao - Instabilidade e preco" /></label>
+          <label>Setor<select defaultValue="Retencao"><option>Comercial</option><option>Atendimento</option><option>Retencao</option></select></label>
+          <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option>Rascunho</option><option>Em revisao</option><option>Publicado</option><option>Arquivado</option></select></label>
+          <label>Objetivo<textarea defaultValue="Avaliar se a causa do cancelamento foi identificada e tratada antes de qualquer oferta comercial." /></label>
+        </div>
+      </article>
+      <article className="panel">
+        <PanelTitle icon={ClipboardCheck} title="Etapas ordenadas" subtitle="Pesos, evidencias esperadas e condicoes de nao aplicavel." />
+        <div className="step-list">
+          {processSteps.Retencao.map((step) => (
+            <div className="step-card" key={step.name}>
+              <h3>{step.name}</h3>
+              <p>Peso {step.weight} - criticidade configuravel - status atual: {status}</p>
+              <small>{step.guidance}</small>
+            </div>
+          ))}
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function Reports({ rows }: { rows: Conversation[] }) {
+  return (
+    <section className="panel">
+      <PanelTitle icon={BarChart3} title="Relatorios" subtitle="Exportacoes incluem filtros e definicoes de metricas." />
+      <div className="report-grid">
+        {[
+          "Executivo por periodo",
+          "Qualidade por setor/equipe/atendente",
+          "Aderencia por etapa",
+          "Reincidencia e risco",
+          "Precisao e calibracao da IA",
+          "Consumo de analises e cota",
+        ].map((report) => (
+          <button className="report-card" key={report}>
+            <FileText size={20} />
+            <strong>{report}</strong>
+            <small>{rows.length} registros no contexto atual</small>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Integrations() {
+  return (
+    <section className="content-grid">
+      {[
+        ["Blip/WhatsApp", "Conectado", "Mensagens, participantes, anexos permitidos e audios transcritos."],
+        ["Telefonia/PBX", "Parcial", "Tempo de toque e causa de encerramento dependem da API real."],
+        ["IXC/ERP", "Simulado", "Cliente, contratos, OS, historico e deep link externo."],
+        ["Pipeline IA", "Operacional", "Normalizar, correlacionar, mascarar, transcrever, avaliar e alertar."],
+      ].map(([title, status, body]) => (
+        <article className="panel integration-card" key={title}>
+          <PanelTitle icon={Activity} title={title} subtitle={status} />
+          <p>{body}</p>
+          <div className="pill-row">
+            <span>Idempotencia</span>
+            <span>Retentativas</span>
+            <span>Fila de erros</span>
+          </div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function Admin() {
+  return (
+    <section className="content-grid two-one">
+      <article className="panel">
+        <PanelTitle icon={Settings} title="Administracao e RBAC" subtitle="Escopo por empresa, unidade, setor, equipe e usuario." />
+        <div className="role-grid">
+          {["Superadmin", "Administrador", "Gestor", "Auditor", "Atendente", "Leitor executivo"].map((role) => (
+            <div className="info-card" key={role}>
+              <h3>{role}</h3>
+              <p>Permissoes demonstrativas com mascaramento, trilha de auditoria e acesso minimo necessario.</p>
+            </div>
+          ))}
+        </div>
+      </article>
+      <article className="panel">
+        <PanelTitle icon={AlertTriangle} title="Pendencias explicitas" subtitle="Configuracoes que dependem da operacao real." />
+        <ul className="decision-list">
+          {pendingDecisions.map((decision) => (
+            <li key={decision}>{decision}</li>
+          ))}
+        </ul>
+      </article>
+    </section>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mini-stat">
+      <small>{label}</small>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function PanelTitle({ icon: Icon, title, subtitle }: { icon: typeof Activity; title: string; subtitle: string }) {
+  return (
+    <header className="panel-title">
+      <span><Icon size={18} /></span>
+      <div>
+        <h2>{title}</h2>
+        <p>{subtitle}</p>
+      </div>
+    </header>
+  );
+}
+
+function ScoreBadge({ score }: { score: number }) {
+  return <span className={`score-badge ${score >= 8 ? "good" : score >= 6 ? "mid" : "bad"}`}>{score.toFixed(1)}</span>;
+}
+
+function ChannelPill({ channel }: { channel: Channel }) {
+  const Icon = channel === "Ligacao" ? Phone : channel === "Audio" ? Headphones : MessageCircle;
+  return (
+    <span className="channel-pill">
+      <Icon size={14} />
+      {channel}
+    </span>
+  );
+}
