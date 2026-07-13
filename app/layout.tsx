@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Delipe Supervisao IA",
+  title: "White Telecom Supervisao IA",
   description:
     "Plataforma SaaS para supervisao, auditoria e melhoria continua de atendimentos.",
   icons: {

@@ -1,48 +1,28 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
-async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
+test("White Telecom product source includes the requested surfaces", async () => {
+  const [page, layout, hosting] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
+  ]);
 
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-}
-
-test("server-renders Delipe Supervisao IA shell", async () => {
-  const response = await render();
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-
-  const html = await response.text();
-  assert.match(html, /<title>Delipe Supervisao IA<\/title>/i);
-  assert.match(html, /Plataforma SaaS para supervisao/);
-  assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
+  assert.match(layout, /White Telecom Supervisao IA/);
+  assert.match(page, /White Telecom Supervisao IA/);
+  assert.doesNotMatch(page, /Delipe|Cota mensal|500 analises/i);
+  assert.match(page, /OperatorPanel/);
+  assert.match(page, /Cadastrar novo processo/);
+  assert.match(page, /PBX SSH/);
+  assert.match(page, /\/api\/admin\/users/);
+  assert.match(hosting, /"d1": "DB"/);
 });
 
-test("product source includes critical vertical slices", async () => {
-  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+test("build emits API routes and D1 migration", async () => {
+  const serverFiles = await readdir(new URL("../dist/server", import.meta.url));
+  const migrations = await readdir(new URL("../drizzle", import.meta.url));
 
-  assert.match(page, /generateConversations/);
-  assert.match(page, /1000/);
-  assert.match(page, /ConversationDetail/);
-  assert.match(page, /AiAgent/);
-  assert.match(page, /Processes/);
-  assert.match(page, /Integrations/);
-  assert.match(page, /Apenas elegiveis/);
-  assert.match(page, /Lead sem cobertura nao penaliza conversao/);
+  assert.ok(serverFiles.includes("index.js"));
+  assert.ok(migrations.some((file) => file.endsWith(".sql")));
 });

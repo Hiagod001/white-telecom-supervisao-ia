@@ -48,12 +48,12 @@ import {
   YAxis,
 } from "recharts";
 import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, Dispatch, SetStateAction } from "react";
 
 const appConfig = {
-  productName: "Delipe Supervisao IA",
-  logoText: "DS",
-  company: "Uai Fibra",
+  productName: "White Telecom Supervisao IA",
+  logoText: "WT",
+  company: "White Telecom",
   colors: {
     accent: "#ff8a22",
     success: "#36d399",
@@ -116,6 +116,37 @@ type ProcessStep = {
   score: number;
   evidence: string;
   guidance: string;
+};
+
+type UserRole = "Administrador" | "Gestor" | "Operador";
+
+type ManagedUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: UserRole;
+  team: string;
+  status: "Ativo" | "Bloqueado";
+};
+
+type ManagedProcess = {
+  id: number;
+  name: string;
+  sector: Sector;
+  status: "Rascunho" | "Em revisao" | "Publicado" | "Arquivado";
+  objective: string;
+  steps: Array<{ name: string; weight: number; criterion: string }>;
+};
+
+type IntegrationConfig = {
+  provider: "Blip" | "OpenAI" | "PBX SSH";
+  status: "Nao configurado" | "Configurado" | "Erro";
+  fields: Record<string, string>;
+};
+
+type ActionToast = {
+  title: string;
+  body: string;
 };
 
 const teams = ["Comercial Norte", "Suporte N1", "Retencao", "Qualidade"];
@@ -277,11 +308,11 @@ const processSteps: Record<Sector, ProcessStep[]> = {
 };
 
 const pendingDecisions = [
-  "Tempo de toque depende da API do PBX/Fortics.",
+  "Consulta de gravacoes depende do acesso SSH ao servidor PBX e das permissoes de leitura nos diretorios de chamadas.",
   "Campos IXC e correlacao de OS dependem da integracao real.",
   "Janela multicanal esta configurada em 24 horas e precisa validacao.",
   "OCR de documentos pessoais fica bloqueado na versao inicial por LGPD.",
-  "500 analises mensais sao cota administrativa configuravel.",
+  "Credenciais da Blip, OpenAI e PBX devem ser guardadas como segredo no ambiente de producao.",
 ];
 
 function pseudoRandom(seed: number) {
@@ -451,6 +482,7 @@ const navItems = [
   { id: "retention", label: "Retencao", icon: ShieldCheck, count: 5 },
   { id: "recurrence", label: "Reincidencia", icon: RefreshCw, count: 7 },
   { id: "agents", label: "Atendentes", icon: Users, count: 6 },
+  { id: "operator", label: "Meu painel", icon: UserCheck, count: 3 },
   { id: "adherence", label: "Aderencia", icon: ClipboardCheck, count: 0 },
   { id: "alerts", label: "Alertas e insights", icon: Bell, count: 23 },
   { id: "ai", label: "Agente de IA", icon: Bot, count: 0 },
@@ -465,6 +497,7 @@ export default function Home() {
   const alerts = useMemo(() => buildAlerts(conversations), [conversations]);
   const [activeView, setActiveView] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [userRole, setUserRole] = useState<UserRole>("Gestor");
   const [period, setPeriod] = useState("30 dias");
   const [sector, setSector] = useState("Todos");
   const [channel, setChannel] = useState("Todos");
@@ -474,6 +507,32 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [loadingState, setLoadingState] = useState<"ready" | "loading" | "error" | "empty">("ready");
   const [agentQuestion, setAgentQuestion] = useState("Como devo tratar uma objecao de preco na retencao?");
+  const [toast, setToast] = useState<ActionToast | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
+  const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([
+    { id: 1, name: "Gabriel Coordenador", email: "gestor@whitetelecom.local", role: "Gestor", team: "Qualidade", status: "Ativo" },
+    { id: 2, name: "Ana Operadora", email: "ana@whitetelecom.local", role: "Operador", team: "Suporte N1", status: "Ativo" },
+  ]);
+  const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>([
+    {
+      id: 1,
+      name: "Atendimento - Suporte N1",
+      sector: "Atendimento",
+      status: "Publicado",
+      objective: "Validar se o operador diagnosticou, registrou e confirmou a resolucao do problema.",
+      steps: [
+        { name: "Acolhimento", weight: 1, criterion: "Saudacao, empatia e identificacao do cliente." },
+        { name: "Confirmacao de resolucao", weight: 2, criterion: "Perguntar se o problema foi resolvido antes de encerrar." },
+      ],
+    },
+  ]);
+  const [integrationConfigs, setIntegrationConfigs] = useState<IntegrationConfig[]>([
+    { provider: "Blip", status: "Nao configurado", fields: { endpoint: "", botId: "", token: "" } },
+    { provider: "OpenAI", status: "Nao configurado", fields: { model: "gpt-4.1-mini", apiKeyRef: "OPENAI_API_KEY" } },
+    { provider: "PBX SSH", status: "Nao configurado", fields: { host: "", port: "22", username: "", recordingsPath: "/var/spool/asterisk/monitor" } },
+  ]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -638,10 +697,78 @@ export default function Home() {
 
   const paginated = filtered.slice((page - 1) * 12, page * 12);
   const totalPages = Math.max(1, Math.ceil(filtered.length / 12));
+  const notifications = useMemo(
+    () => [
+      ...alerts.slice(0, 8).map((alert) => ({
+        id: alert.id,
+        title: alert.type,
+        body: alert.evidence,
+        view: "alerts",
+        targetId: alert.conversationId,
+      })),
+      ...filtered
+        .filter((row) => row.recurrences >= 3)
+        .slice(0, 5)
+        .map((row) => ({
+          id: `rec-${row.id}`,
+          title: "Reincidencia alta",
+          body: `${row.client}: ${row.recurrences} contatos em 14 dias`,
+          view: "recurrence",
+          targetId: row.id,
+        })),
+      ...managedProcesses
+        .filter((process) => process.status !== "Publicado")
+        .map((process) => ({
+          id: `proc-${process.id}`,
+          title: "Processo pendente",
+          body: `${process.name} esta em ${process.status}`,
+          view: "processes",
+          targetId: String(process.id),
+        })),
+    ],
+    [alerts, filtered, managedProcesses],
+  );
+  const unreadNotifications = notifications.filter((item) => !readNotificationIds.includes(item.id));
+  const navCounts = useMemo(
+    () => ({
+      conversations: filtered.filter((row) => row.reviewStatus === "Pendente").length,
+      commercial: filtered.filter((row) => row.sector === "Comercial" && row.alerts.length).length,
+      support: filtered.filter((row) => row.sector === "Atendimento" && row.alerts.length).length,
+      retention: filtered.filter((row) => row.sector === "Retencao" && row.alerts.length).length,
+      recurrence: filtered.filter((row) => row.recurrences >= 3).length,
+      agents: attendantRanking.filter((row) => row.volume > 0).length,
+      operator: filtered.filter((row) => row.attendant === "Ana Costa" && row.reviewStatus !== "Revisado").length,
+      alerts: unreadNotifications.length,
+      processes: managedProcesses.filter((process) => process.status !== "Publicado").length,
+      integrations: integrationConfigs.filter((integration) => integration.status !== "Configurado").length,
+    }),
+    [attendantRanking, filtered, integrationConfigs, managedProcesses, unreadNotifications.length],
+  );
   const activeTitle =
     activeView === "detail"
       ? "Detalhe do atendimento"
       : navItems.find((item) => item.id === activeView)?.label ?? "Visao geral";
+
+  const notify = (title: string, body: string) => {
+    setToast({ title, body });
+    window.setTimeout(() => setToast(null), 3600);
+  };
+
+  const persistAction = (action: string, targetType: string, targetId: string, note: string) => {
+    fetch("/api/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, targetType, targetId, note }),
+    }).catch(() => undefined);
+  };
+
+  const openNotification = (notification: (typeof notifications)[number]) => {
+    setReadNotificationIds((ids) => Array.from(new Set([...ids, notification.id])));
+    setNotificationsOpen(false);
+    if (notification.targetId.startsWith("att-")) setSelectedId(notification.targetId);
+    setActiveView(notification.view);
+    persistAction("mark_notification_read", "notification", notification.id, notification.title);
+  };
 
   const openMetric = (label: string) => {
     setActiveView("conversations");
@@ -667,6 +794,7 @@ export default function Home() {
         <nav>
           {navItems.map((item) => {
             const Icon = item.icon;
+            const dynamicCount = navCounts[item.id as keyof typeof navCounts] ?? item.count;
             return (
               <button
                 key={item.id}
@@ -679,18 +807,15 @@ export default function Home() {
               >
                 <Icon size={18} aria-hidden="true" />
                 <span>{item.label}</span>
-                {item.count > 0 ? <b>{item.count}</b> : null}
+                {dynamicCount > 0 ? <b>{dynamicCount}</b> : null}
               </button>
             );
           })}
         </nav>
-        <div className="quota-panel">
-          <span>Cota mensal</span>
-          <strong>384 / 500 analises</strong>
-          <div className="quota-bar">
-            <i style={{ width: "77%" }} />
-          </div>
-          <small>Pacotes adicionais configuraveis por setor.</small>
+        <div className="sidebar-status">
+          <span>Ambiente</span>
+          <strong>White Telecom</strong>
+          <small>Blip, OpenAI e PBX SSH configurados pela Administracao.</small>
         </div>
       </aside>
 
@@ -730,13 +855,44 @@ export default function Home() {
             <Activity size={16} />
             Sincronizado
           </button>
-          <button className="icon-button" aria-label="Notificacoes">
+          <button className="icon-button notification-button" aria-label="Notificacoes" onClick={() => setNotificationsOpen((open) => !open)}>
             <Bell size={18} />
+            {unreadNotifications.length > 0 ? <b>{unreadNotifications.length}</b> : null}
           </button>
-          <button className="user-menu" aria-label="Menu do usuario">
-            <span>GC</span>
-            Gestor
-          </button>
+          <div className="user-area">
+            <button className="user-menu" aria-label="Menu do usuario" onClick={() => setUserMenuOpen((open) => !open)}>
+              <span>{userRole === "Operador" ? "OP" : userRole === "Administrador" ? "AD" : "GT"}</span>
+              {userRole}
+            </button>
+            {userMenuOpen ? (
+              <div className="popover user-popover">
+                <strong>Visualizacao atual</strong>
+                <select value={userRole} onChange={(event) => setUserRole(event.target.value as UserRole)}>
+                  <option>Administrador</option>
+                  <option>Gestor</option>
+                  <option>Operador</option>
+                </select>
+                <button onClick={() => { setActiveView("operator"); setUserMenuOpen(false); }}>Entrar como operador</button>
+                <button onClick={() => { setActiveView("admin"); setUserMenuOpen(false); }}>Abrir administracao</button>
+                <button onClick={() => notify("Sessao encerrada", "Fluxo de sair foi executado na interface. A autenticacao real fica no provedor do site.")}>Sair</button>
+              </div>
+            ) : null}
+          </div>
+          {notificationsOpen ? (
+            <div className="popover notifications-popover">
+              <strong>Notificacoes nao vistas</strong>
+              {notifications.slice(0, 12).map((notification) => (
+                <button
+                  key={notification.id}
+                  className={readNotificationIds.includes(notification.id) ? "read" : ""}
+                  onClick={() => openNotification(notification)}
+                >
+                  <span>{notification.title}</span>
+                  <small>{notification.body}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </header>
 
         <div className="view-header">
@@ -798,7 +954,7 @@ export default function Home() {
                 onAssign={(id) => setSelectedId(id)}
               />
             )}
-            {activeView === "detail" && selected && <ConversationDetail conversation={selected} />}
+            {activeView === "detail" && selected && <ConversationDetail conversation={selected} onNotify={notify} />}
             {["commercial", "support", "retention"].includes(activeView) && (
               <SectorView
                 sector={activeView === "commercial" ? "Comercial" : activeView === "support" ? "Atendimento" : "Retencao"}
@@ -811,8 +967,9 @@ export default function Home() {
             )}
             {activeView === "recurrence" && <Recurrence rows={filtered} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
             {activeView === "agents" && <Agents ranking={attendantRanking} rows={filtered} />}
+            {activeView === "operator" && <OperatorPanel rows={filtered.filter((row) => row.attendant === "Ana Costa")} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
             {activeView === "adherence" && <Adherence rows={filtered} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
-            {activeView === "alerts" && <AlertsCenter alerts={alerts} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
+            {activeView === "alerts" && <AlertsCenter alerts={alerts} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} onNotify={notify} />}
             {activeView === "ai" && (
               <AiAgent
                 question={agentQuestion}
@@ -820,12 +977,26 @@ export default function Home() {
                 selected={selected}
               />
             )}
-            {activeView === "processes" && <Processes />}
+            {activeView === "processes" && <Processes processes={managedProcesses} setProcesses={setManagedProcesses} onNotify={notify} />}
             {activeView === "reports" && <Reports rows={filtered} />}
-            {activeView === "integrations" && <Integrations />}
-            {activeView === "admin" && <Admin />}
+            {activeView === "integrations" && <Integrations configs={integrationConfigs} setConfigs={setIntegrationConfigs} onNotify={notify} />}
+            {activeView === "admin" && (
+              <Admin
+                users={managedUsers}
+                setUsers={setManagedUsers}
+                configs={integrationConfigs}
+                setConfigs={setIntegrationConfigs}
+                onNotify={notify}
+              />
+            )}
           </>
         )}
+        {toast ? (
+          <div className="toast" role="status">
+            <strong>{toast.title}</strong>
+            <span>{toast.body}</span>
+          </div>
+        ) : null}
       </section>
     </main>
   );
@@ -1076,9 +1247,26 @@ function Conversations({
   );
 }
 
-function ConversationDetail({ conversation }: { conversation: Conversation }) {
+function ConversationDetail({
+  conversation,
+  onNotify,
+}: {
+  conversation: Conversation;
+  onNotify: (title: string, body: string) => void;
+}) {
   const [tab, setTab] = useState("summary");
+  const [feedback, setFeedback] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [ticketOpen, setTicketOpen] = useState(false);
   const steps = processSteps[conversation.sector];
+
+  const sendAction = (action: string, note: string) => {
+    fetch("/api/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, targetType: "conversation", targetId: conversation.id, note }),
+    }).catch(() => undefined);
+  };
 
   return (
     <section className="detail-layout">
@@ -1099,11 +1287,58 @@ function ConversationDetail({ conversation }: { conversation: Conversation }) {
           <small>nota IA</small>
         </div>
         <div className="detail-actions">
-          <button><MessageCircle size={16} /> Dar feedback</button>
-          <button><AlertTriangle size={16} /> Contestar avaliacao</button>
-          <button><CheckCircle2 size={16} /> Revisar</button>
-          <button><ChevronRight size={16} /> Abrir no IXC</button>
+          <button
+            onClick={() => {
+              const note = feedback || "Feedback rapido registrado para coaching.";
+              setFeedback(note);
+              sendAction("feedback", note);
+              onNotify("Feedback registrado", `Feedback vinculado ao protocolo ${conversation.protocol}.`);
+            }}
+          >
+            <MessageCircle size={16} /> Dar feedback
+          </button>
+          <button
+            onClick={() => {
+              sendAction("contest", "Operador contestou a avaliacao da IA.");
+              onNotify("Contestacao aberta", "A avaliacao entrou na fila de revisao humana.");
+            }}
+          >
+            <AlertTriangle size={16} /> Contestar avaliacao
+          </button>
+          <button
+            onClick={() => {
+              const note = reviewNote || "Revisao humana concluida pelo gestor.";
+              setReviewNote(note);
+              sendAction("review", note);
+              onNotify("Atendimento revisado", "Status de revisao atualizado na trilha de auditoria.");
+            }}
+          >
+            <CheckCircle2 size={16} /> Revisar
+          </button>
+          <button
+            onClick={() => {
+              setTicketOpen(true);
+              sendAction("open_ticket", "Novo TC aberto a partir da supervisao.");
+              onNotify("Novo TC aberto", `TC criado para o protocolo ${conversation.protocol}.`);
+            }}
+          >
+            <ChevronRight size={16} /> Abrir novo TC
+          </button>
         </div>
+      </article>
+
+      <article className="panel action-panel">
+        <label>
+          Feedback ao operador
+          <textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Ex.: confirmou dados, mas nao validou resolucao antes de encerrar." />
+        </label>
+        <label>
+          Nota da revisao
+          <input value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Ex.: revisado por amostragem do gestor." />
+        </label>
+        <span className={ticketOpen ? "status cumpriu" : "status incerto"}>
+          {ticketOpen ? "TC aberto e vinculado" : "Nenhum TC aberto nesta revisao"}
+        </span>
       </article>
 
       <article className="panel">
@@ -1317,6 +1552,72 @@ function Agents({ ranking, rows }: { ranking: Array<{ name: string; team: string
   );
 }
 
+function OperatorPanel({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: string) => void }) {
+  const eligible = rows.filter((row) => row.eligible);
+  const weakRows = eligible.filter((row) => row.score < 6.5).slice(0, 5);
+  const goodRows = eligible.filter((row) => row.score >= 8).slice(0, 5);
+
+  return (
+    <section className="stack">
+      <article className="panel">
+        <PanelTitle icon={UserCheck} title="Resumo do operador" subtitle="Visao individual sem ranking nominal de colegas." />
+        <div className="metric-grid compact">
+          <MiniStat label="Meus atendimentos" value={rows.length.toString()} />
+          <MiniStat label="Elegiveis para nota" value={eligible.length.toString()} />
+          <MiniStat label="Minha nota media" value={average(eligible.map((row) => row.score)).toFixed(1)} />
+          <MiniStat label="Minha aderencia" value={percent(average(eligible.map((row) => row.adherence)))} />
+        </div>
+      </article>
+
+      <section className="content-grid two-one">
+        <article className="panel">
+          <PanelTitle icon={ClipboardCheck} title="O que fiz bem" subtitle="Evidencias positivas em atendimentos recentes." />
+          <div className="cards-list">
+            {goodRows.map((row) => (
+              <button className="case-card" key={row.id} onClick={() => onOpen(row.id)}>
+                <span><strong>{row.protocol}</strong><small>{row.classification}</small></span>
+                <span>Boa conducao<small>{row.channel} - {formatDate(row.start)}</small></span>
+                <ScoreBadge score={row.score} />
+              </button>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <PanelTitle icon={AlertTriangle} title="O que preciso corrigir" subtitle="Pontos objetivos para coaching individual." />
+          <div className="cards-list">
+            {weakRows.map((row) => (
+              <button className="case-card" key={row.id} onClick={() => onOpen(row.id)}>
+                <span><strong>{row.protocol}</strong><small>{row.alerts[0] ?? "Etapa com baixa aderencia"}</small></span>
+                <span>{row.resolution}<small>{row.ineligibleReason}</small></span>
+                <ScoreBadge score={row.score} />
+              </button>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      <article className="panel">
+        <PanelTitle icon={MessageCircle} title="Feedbacks pendentes" subtitle="Cada item aponta volume e evidencia, sem comparacao punitiva." />
+        <div className="summary-grid">
+          <div className="info-card">
+            <h3>Confirmar resolucao</h3>
+            <p>Em 4 de 11 atendimentos elegiveis, a conversa encerrou sem confirmar se o cliente ficou atendido.</p>
+          </div>
+          <div className="info-card">
+            <h3>Registrar proximo passo</h3>
+            <p>Quando abriu OS, informe prazo e canal de retorno. Evidencia em atendimentos com nota abaixo de 7.</p>
+          </div>
+          <div className="info-card">
+            <h3>Evolucao</h3>
+            <p>Houve melhora na saudacao e identificacao em relacao ao periodo anterior.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+  );
+}
+
 function Adherence({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: string) => void }) {
   const names = ["Saudacao", "Diagnostico", "Confirmacao", "Registro", "Escalonamento"];
   return (
@@ -1346,7 +1647,26 @@ function Adherence({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: string
   );
 }
 
-function AlertsCenter({ alerts, onOpen }: { alerts: AlertItem[]; onOpen: (id: string) => void }) {
+function AlertsCenter({
+  alerts,
+  onOpen,
+  onNotify,
+}: {
+  alerts: AlertItem[];
+  onOpen: (id: string) => void;
+  onNotify: (title: string, body: string) => void;
+}) {
+  const [statusById, setStatusById] = useState<Record<string, AlertStatus>>({});
+  const updateAlert = (alert: AlertItem, status: AlertStatus) => {
+    setStatusById((items) => ({ ...items, [alert.id]: status }));
+    fetch("/api/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: `alert_${status}`, targetType: "alert", targetId: alert.id, note: alert.evidence }),
+    }).catch(() => undefined);
+    onNotify("Alerta atualizado", `${alert.type} ficou como ${status}.`);
+  };
+
   return (
     <section className="panel">
       <PanelTitle icon={AlertTriangle} title="Central de alertas configuravel" subtitle="Atribuir, comentar, resolver e criar tarefas de coaching." />
@@ -1355,8 +1675,13 @@ function AlertsCenter({ alerts, onOpen }: { alerts: AlertItem[]; onOpen: (id: st
           <div className="case-card" key={alert.id}>
             <span><strong>{alert.type}</strong><small>{alert.evidence}</small></span>
             <span>{alert.severity}<small>{alert.owner} - {alert.due}</small></span>
-            <span>{alert.status}</span>
-            <button onClick={() => onOpen(alert.conversationId)}>Abrir origem</button>
+            <span>{statusById[alert.id] ?? alert.status}</span>
+            <div className="row-actions">
+              <button onClick={() => updateAlert(alert, "Reconhecido")}>Reconhecer</button>
+              <button onClick={() => updateAlert(alert, "Resolvido")}>Resolver</button>
+              <button onClick={() => onNotify("Tarefa criada", `Coaching criado para ${alert.evidence}.`)}>Criar tarefa</button>
+              <button onClick={() => onOpen(alert.conversationId)}>Abrir origem</button>
+            </div>
           </div>
         ))}
       </div>
@@ -1407,28 +1732,94 @@ function AiAgent({
   );
 }
 
-function Processes() {
-  const [status, setStatus] = useState("Rascunho");
+function Processes({
+  processes,
+  setProcesses,
+  onNotify,
+}: {
+  processes: ManagedProcess[];
+  setProcesses: Dispatch<SetStateAction<ManagedProcess[]>>;
+  onNotify: (title: string, body: string) => void;
+}) {
+  const [draft, setDraft] = useState<ManagedProcess>({
+    id: 0,
+    name: "",
+    sector: "Atendimento",
+    status: "Rascunho",
+    objective: "",
+    steps: [{ name: "", weight: 1, criterion: "" }],
+  });
+
+  const updateStep = (index: number, key: "name" | "weight" | "criterion", value: string) => {
+    setDraft((current) => ({
+      ...current,
+      steps: current.steps.map((step, stepIndex) =>
+        stepIndex === index
+          ? { ...step, [key]: key === "weight" ? Number(value) || 1 : value }
+          : step,
+      ),
+    }));
+  };
+
+  const saveProcess = () => {
+    if (!draft.name.trim() || !draft.objective.trim()) {
+      onNotify("Processo incompleto", "Informe nome e objetivo antes de salvar.");
+      return;
+    }
+    const created = { ...draft, id: Date.now(), steps: draft.steps.filter((step) => step.name.trim()) };
+    setProcesses((items) => [created, ...items]);
+    fetch("/api/admin/processes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(created),
+    }).catch(() => undefined);
+    onNotify("Processo salvo", `${created.name} foi cadastrado como ${created.status}.`);
+    setDraft({
+      id: 0,
+      name: "",
+      sector: "Atendimento",
+      status: "Rascunho",
+      objective: "",
+      steps: [{ name: "", weight: 1, criterion: "" }],
+    });
+  };
+
   return (
     <section className="stack">
       <article className="panel">
-        <PanelTitle icon={FileText} title="Editor visual de processos" subtitle="Versionamento preserva avaliacoes historicas." />
+        <PanelTitle icon={FileText} title="Cadastrar novo processo" subtitle="Salva localmente na tela e envia para o banco D1 quando a migracao estiver aplicada." />
         <div className="process-editor">
-          <label>Nome<input defaultValue="Processo Retencao - Instabilidade e preco" /></label>
-          <label>Setor<select defaultValue="Retencao"><option>Comercial</option><option>Atendimento</option><option>Retencao</option></select></label>
-          <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option>Rascunho</option><option>Em revisao</option><option>Publicado</option><option>Arquivado</option></select></label>
-          <label>Objetivo<textarea defaultValue="Avaliar se a causa do cancelamento foi identificada e tratada antes de qualquer oferta comercial." /></label>
+          <label>Nome<input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Atendimento - Suporte N1" /></label>
+          <label>Setor<select value={draft.sector} onChange={(event) => setDraft((current) => ({ ...current, sector: event.target.value as Sector }))}><option>Comercial</option><option>Atendimento</option><option>Retencao</option></select></label>
+          <label>Status<select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as ManagedProcess["status"] }))}><option>Rascunho</option><option>Em revisao</option><option>Publicado</option><option>Arquivado</option></select></label>
+          <label>Objetivo<textarea value={draft.objective} onChange={(event) => setDraft((current) => ({ ...current, objective: event.target.value }))} placeholder="Descreva o objetivo da avaliacao e quando esse processo deve ser usado." /></label>
         </div>
       </article>
       <article className="panel">
-        <PanelTitle icon={ClipboardCheck} title="Etapas ordenadas" subtitle="Pesos, evidencias esperadas e condicoes de nao aplicavel." />
+        <PanelTitle icon={ClipboardCheck} title="Etapas do novo processo" subtitle="Inclua criterio e peso; etapas vazias sao ignoradas ao salvar." />
         <div className="step-list">
-          {processSteps.Retencao.map((step) => (
-            <div className="step-card" key={step.name}>
-              <h3>{step.name}</h3>
-              <p>Peso {step.weight} - criticidade configuravel - status atual: {status}</p>
-              <small>{step.guidance}</small>
+          {draft.steps.map((step, index) => (
+            <div className="step-card editable-step" key={index}>
+              <label>Etapa<input value={step.name} onChange={(event) => updateStep(index, "name", event.target.value)} placeholder="Ex.: Confirmacao de resolucao" /></label>
+              <label>Peso<input value={step.weight} onChange={(event) => updateStep(index, "weight", event.target.value)} inputMode="numeric" /></label>
+              <label>Criterio<input value={step.criterion} onChange={(event) => updateStep(index, "criterion", event.target.value)} placeholder="Evidencia esperada para cumprir a etapa" /></label>
             </div>
+          ))}
+          <div className="form-actions">
+            <button onClick={() => setDraft((current) => ({ ...current, steps: [...current.steps, { name: "", weight: 1, criterion: "" }] }))}>Adicionar etapa</button>
+            <button onClick={saveProcess}>Salvar processo</button>
+          </div>
+        </div>
+      </article>
+      <article className="panel">
+        <PanelTitle icon={FileText} title="Processos cadastrados" subtitle="Clique para reutilizar como base de uma nova versao." />
+        <div className="cards-list">
+          {processes.map((process) => (
+            <button className="case-card" key={process.id} onClick={() => setDraft({ ...process, id: 0, status: "Rascunho" })}>
+              <span><strong>{process.name}</strong><small>{process.objective}</small></span>
+              <span>{process.sector}<small>{process.steps.length} etapas</small></span>
+              <span className="status cumpriu">{process.status}</span>
+            </button>
           ))}
         </div>
       </article>
@@ -1460,43 +1851,201 @@ function Reports({ rows }: { rows: Conversation[] }) {
   );
 }
 
-function Integrations() {
+function Integrations({
+  configs,
+  setConfigs,
+  onNotify,
+}: {
+  configs: IntegrationConfig[];
+  setConfigs: Dispatch<SetStateAction<IntegrationConfig[]>>;
+  onNotify: (title: string, body: string) => void;
+}) {
+  const updateConfig = (provider: IntegrationConfig["provider"], key: string, value: string) => {
+    setConfigs((items) =>
+      items.map((item) =>
+        item.provider === provider
+          ? { ...item, fields: { ...item.fields, [key]: value } }
+          : item,
+      ),
+    );
+  };
+
+  const saveIntegration = (config: IntegrationConfig) => {
+    setConfigs((items) =>
+      items.map((item) =>
+        item.provider === config.provider ? { ...item, status: "Configurado" } : item,
+      ),
+    );
+    fetch("/api/admin/integrations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: config.provider, status: "Configurado", config: config.fields }),
+    }).catch(() => undefined);
+    onNotify("Integracao salva", `${config.provider} foi marcada como configurada.`);
+  };
+
   return (
-    <section className="content-grid">
-      {[
-        ["Blip/WhatsApp", "Conectado", "Mensagens, participantes, anexos permitidos e audios transcritos."],
-        ["Telefonia/PBX", "Parcial", "Tempo de toque e causa de encerramento dependem da API real."],
-        ["IXC/ERP", "Simulado", "Cliente, contratos, OS, historico e deep link externo."],
-        ["Pipeline IA", "Operacional", "Normalizar, correlacionar, mascarar, transcrever, avaliar e alertar."],
-      ].map(([title, status, body]) => (
-        <article className="panel integration-card" key={title}>
-          <PanelTitle icon={Activity} title={title} subtitle={status} />
-          <p>{body}</p>
-          <div className="pill-row">
-            <span>Idempotencia</span>
-            <span>Retentativas</span>
-            <span>Fila de erros</span>
+    <section className="stack">
+      <article className="panel">
+        <PanelTitle icon={Activity} title="Integracoes da supervisao" subtitle="Administrador configura Blip, OpenAI e PBX SSH. Segredos devem ir para variaveis seguras no deploy real." />
+        <div className="content-grid">
+          {configs.map((config) => (
+            <article className="integration-card" key={config.provider}>
+              <header>
+                <strong>{config.provider}</strong>
+                <span className={config.status === "Configurado" ? "status cumpriu" : "status incerto"}>{config.status}</span>
+              </header>
+              {Object.entries(config.fields).map(([key, value]) => (
+                <label key={key}>
+                  {key}
+                  <input
+                    value={value}
+                    type={key.toLowerCase().includes("token") || key.toLowerCase().includes("key") ? "password" : "text"}
+                    onChange={(event) => updateConfig(config.provider, key, event.target.value)}
+                    placeholder={key === "host" ? "10.0.0.15" : key}
+                  />
+                </label>
+              ))}
+              <div className="form-actions">
+                <button onClick={() => saveIntegration(config)}>Salvar</button>
+                <button onClick={() => onNotify("Teste iniciado", `${config.provider}: teste de conectividade simulado executado.`)}>Testar</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </article>
+      <article className="panel">
+        <PanelTitle icon={ShieldCheck} title="Como a ingestao vai funcionar" subtitle="Fluxo previsto para substituir os adaptadores simulados." />
+        <div className="summary-grid">
+          <div className="info-card">
+            <h3>Blip</h3>
+            <p>Importa mensagens, audios e metadados do atendimento. Audios entram na fila de transcricao antes da avaliacao.</p>
           </div>
-        </article>
-      ))}
+          <div className="info-card">
+            <h3>OpenAI</h3>
+            <p>Executa transcricao, classificacao e avaliacao por schema. A chave fica no ambiente seguro, nao no front-end.</p>
+          </div>
+          <div className="info-card">
+            <h3>PBX SSH</h3>
+            <p>Autentica no servidor, lista gravacoes por periodo/ramal e relaciona arquivo ao atendimento antes da transcricao.</p>
+          </div>
+        </div>
+      </article>
     </section>
   );
 }
 
-function Admin() {
+function Admin({
+  users,
+  setUsers,
+  configs,
+  setConfigs,
+  onNotify,
+}: {
+  users: ManagedUser[];
+  setUsers: Dispatch<SetStateAction<ManagedUser[]>>;
+  configs: IntegrationConfig[];
+  setConfigs: Dispatch<SetStateAction<IntegrationConfig[]>>;
+  onNotify: (title: string, body: string) => void;
+}) {
+  const [draftUser, setDraftUser] = useState({
+    name: "",
+    email: "",
+    role: "Operador" as UserRole,
+    team: "Suporte N1",
+    password: "",
+  });
+
+  const saveUser = () => {
+    if (!draftUser.name.trim() || !draftUser.email.trim() || draftUser.password.length < 6) {
+      onNotify("Usuario incompleto", "Informe nome, email e senha com pelo menos 6 caracteres.");
+      return;
+    }
+    const created: ManagedUser = {
+      id: Date.now(),
+      name: draftUser.name,
+      email: draftUser.email,
+      role: draftUser.role,
+      team: draftUser.team,
+      status: "Ativo",
+    };
+    setUsers((items) => [created, ...items]);
+    fetch("/api/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draftUser),
+    }).catch(() => undefined);
+    onNotify("Usuario criado", `${created.name} pode acessar como ${created.role}.`);
+    setDraftUser({ name: "", email: "", role: "Operador", team: "Suporte N1", password: "" });
+  };
+
+  const markConfigured = (provider: IntegrationConfig["provider"]) => {
+    setConfigs((items) =>
+      items.map((item) => (item.provider === provider ? { ...item, status: "Configurado" } : item)),
+    );
+    onNotify("Supervisao atualizada", `${provider} ficou pronto para testes de integracao.`);
+  };
+
   return (
-    <section className="content-grid two-one">
+    <section className="stack">
       <article className="panel">
-        <PanelTitle icon={Settings} title="Administracao e RBAC" subtitle="Escopo por empresa, unidade, setor, equipe e usuario." />
+        <PanelTitle icon={Settings} title="Administracao" subtitle="Criacao de usuarios, perfis e integracoes da White Telecom." />
+        <div className="process-editor">
+          <label>Nome<input value={draftUser.name} onChange={(event) => setDraftUser((current) => ({ ...current, name: event.target.value }))} placeholder="Nome do usuario" /></label>
+          <label>Email<input value={draftUser.email} onChange={(event) => setDraftUser((current) => ({ ...current, email: event.target.value }))} placeholder="email@whitetelecom.com.br" /></label>
+          <label>Perfil<select value={draftUser.role} onChange={(event) => setDraftUser((current) => ({ ...current, role: event.target.value as UserRole }))}><option>Administrador</option><option>Gestor</option><option>Operador</option></select></label>
+          <label>Equipe<input value={draftUser.team} onChange={(event) => setDraftUser((current) => ({ ...current, team: event.target.value }))} /></label>
+          <label>Senha<input type="password" value={draftUser.password} onChange={(event) => setDraftUser((current) => ({ ...current, password: event.target.value }))} placeholder="Minimo 6 caracteres" /></label>
+          <div className="form-actions">
+            <button onClick={saveUser}>Criar usuario</button>
+          </div>
+        </div>
+      </article>
+
+      <section className="content-grid two-one">
+        <article className="panel">
+          <PanelTitle icon={Users} title="Usuarios cadastrados" subtitle="Persistencia preparada no D1; a lista responde imediatamente na interface." />
+          <div className="cards-list">
+            {users.map((user) => (
+              <div className="case-card" key={user.id}>
+                <span><strong>{user.name}</strong><small>{user.email}</small></span>
+                <span>{user.role}<small>{user.team}</small></span>
+                <span className="status cumpriu">{user.status}</span>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <PanelTitle icon={Activity} title="Supervisao do administrador" subtitle="Atalhos para marcar integracoes como prontas apos validar credenciais." />
+          <div className="cards-list">
+            {configs.map((config) => (
+              <div className="case-card" key={config.provider}>
+                <span><strong>{config.provider}</strong><small>{config.provider === "PBX SSH" ? "Busca gravacoes no servidor via SSH" : "Usado pelo pipeline de IA"}</small></span>
+                <span className={config.status === "Configurado" ? "status cumpriu" : "status incerto"}>{config.status}</span>
+                <button onClick={() => markConfigured(config.provider)}>Marcar pronto</button>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      <article className="panel">
+        <PanelTitle icon={ShieldCheck} title="Perfis e permissoes" subtitle="Gestor e operador veem superficies diferentes." />
         <div className="role-grid">
-          {["Superadmin", "Administrador", "Gestor", "Auditor", "Atendente", "Leitor executivo"].map((role) => (
+          {[
+            ["Administrador", "Configura usuarios, Blip, OpenAI, PBX SSH, processos e politicas."],
+            ["Gestor", "Acompanha alertas, reincidencias, revisoes e feedbacks da equipe."],
+            ["Operador", "Ve somente o proprio resumo, atendimentos, feedbacks e contestacoes permitidas."],
+          ].map(([role, body]) => (
             <div className="info-card" key={role}>
               <h3>{role}</h3>
-              <p>Permissoes demonstrativas com mascaramento, trilha de auditoria e acesso minimo necessario.</p>
+              <p>{body}</p>
             </div>
           ))}
         </div>
       </article>
+
       <article className="panel">
         <PanelTitle icon={AlertTriangle} title="Pendencias explicitas" subtitle="Configuracoes que dependem da operacao real." />
         <ul className="decision-list">

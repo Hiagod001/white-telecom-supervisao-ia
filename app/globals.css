@@ -152,7 +152,7 @@ small,
   font-size: 12px;
 }
 
-.quota-panel {
+.sidebar-status {
   margin-top: 18px;
   padding: 12px;
   border: 1px solid var(--border);
@@ -160,21 +160,12 @@ small,
   background: #180c20;
 }
 
-.quota-panel span,
-.quota-panel strong,
-.quota-panel small {
+.sidebar-status span,
+.sidebar-status strong,
+.sidebar-status small {
   display: block;
 }
 
-.quota-bar {
-  height: 8px;
-  margin: 9px 0;
-  border-radius: 999px;
-  background: #32183f;
-  overflow: hidden;
-}
-
-.quota-bar i,
 .step-bars i,
 .audio-player i {
   display: block;
@@ -223,6 +214,10 @@ small,
 
 select,
 textarea,
+.action-panel input,
+.editable-step input,
+.integration-card input,
+.process-editor input,
 .process-editor input,
 .process-editor select {
   min-height: 42px;
@@ -247,6 +242,8 @@ textarea {
 .sync-pill,
 .user-menu,
 .icon-button,
+.popover button,
+.form-actions button,
 .header-actions button,
 .table-toolbar button,
 .pagination button,
@@ -280,6 +277,66 @@ textarea {
   background: var(--accent);
   color: #160718;
   font-weight: 800;
+}
+
+.user-area {
+  position: relative;
+}
+
+.notification-button {
+  position: relative;
+}
+
+.notification-button b {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+}
+
+.popover {
+  position: absolute;
+  top: 64px;
+  right: 22px;
+  z-index: 30;
+  width: min(360px, calc(100vw - 24px));
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #160b1d;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+}
+
+.user-popover {
+  top: 46px;
+  right: 0;
+}
+
+.notifications-popover button {
+  display: grid;
+  justify-content: stretch;
+  height: auto;
+  min-height: 58px;
+  padding: 9px;
+  text-align: left;
+}
+
+.notifications-popover button.read {
+  opacity: 0.58;
+}
+
+.notifications-popover span,
+.notifications-popover small {
+  display: block;
 }
 
 .view-header {
@@ -869,6 +926,65 @@ tbody tr.selected {
 
 .integration-card p {
   color: var(--muted);
+}
+
+.integration-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #160b1d;
+}
+
+.integration-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.integration-card label,
+.action-panel label,
+.editable-step label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.action-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.7fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.editable-step {
+  grid-template-columns: minmax(180px, 0.8fr) 90px minmax(0, 1.4fr);
+}
+
+.toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 40;
+  width: min(420px, calc(100vw - 36px));
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid #735024;
+  border-radius: 8px;
+  background: #1b1015;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
+}
+
+.toast strong {
+  color: var(--accent);
 }
 
 .decision-list {
