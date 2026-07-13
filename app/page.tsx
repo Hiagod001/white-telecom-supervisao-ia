@@ -34,7 +34,6 @@ import {
 } from "lucide-react";
 import {
   Bar,
-  BarChart,
   CartesianGrid,
   Cell,
   ComposedChart,
@@ -149,7 +148,6 @@ type ActionToast = {
   body: string;
 };
 
-const teams = ["Comercial Norte", "Suporte N1", "Retencao", "Qualidade"];
 const attendantNames = [
   "Ana Costa",
   "Bruno Lima",
@@ -539,9 +537,11 @@ export default function Home() {
     const view = params.get("view");
     const query = params.get("q");
     const nextSector = params.get("sector");
-    if (view) setActiveView(view);
-    if (query) setSearch(query);
-    if (nextSector) setSector(nextSector);
+    queueMicrotask(() => {
+      if (view) setActiveView(view);
+      if (query) setSearch(query);
+      if (nextSector) setSector(nextSector);
+    });
   }, []);
 
   useEffect(() => {
@@ -1148,9 +1148,11 @@ function Overview({
           <div className="alert-list">
             {alerts.slice(0, 6).map((alert) => (
               <div className={`alert-row ${alert.severity.toLowerCase()}`} key={alert.id}>
-                <span>{alert.severity}</span>
-                <strong>{alert.type}</strong>
-                <small>{alert.evidence}</small>
+                <span className="alert-severity">{alert.severity}</span>
+                <div className="alert-copy">
+                  <strong>{alert.type}</strong>
+                  <small>{alert.evidence}</small>
+                </div>
               </div>
             ))}
           </div>
@@ -1670,12 +1672,12 @@ function AlertsCenter({
   return (
     <section className="panel">
       <PanelTitle icon={AlertTriangle} title="Central de alertas configuravel" subtitle="Atribuir, comentar, resolver e criar tarefas de coaching." />
-      <div className="cards-list">
+      <div className="cards-list alerts-center-list">
         {alerts.map((alert) => (
-          <div className="case-card" key={alert.id}>
-            <span><strong>{alert.type}</strong><small>{alert.evidence}</small></span>
-            <span>{alert.severity}<small>{alert.owner} - {alert.due}</small></span>
-            <span>{statusById[alert.id] ?? alert.status}</span>
+          <div className="case-card alert-case-card" key={alert.id}>
+            <span className="alert-case-main"><strong>{alert.type}</strong><small>{alert.evidence}</small></span>
+            <span className="alert-case-meta"><strong>{alert.severity}</strong><small>{alert.owner} - {alert.due}</small></span>
+            <span className="alert-case-status">{statusById[alert.id] ?? alert.status}</span>
             <div className="row-actions">
               <button onClick={() => updateAlert(alert, "Reconhecido")}>Reconhecer</button>
               <button onClick={() => updateAlert(alert, "Resolvido")}>Resolver</button>
@@ -1707,8 +1709,8 @@ function AiAgent({
           <strong>Resposta com fontes internas</strong>
           <p>Para objecao de preco, primeiro confirme o motivo principal e o historico do cliente. Se houver instabilidade recorrente, trate a causa tecnica antes de oferecer desconto. Quando houver base suficiente, compare valor percebido, plano atual e necessidade de uso. Nao prometa desconto fora da politica aprovada.</p>
           <ul>
-            <li>Fonte: Processo Retencao v2.1, etapa "Tratar causa antes do desconto".</li>
-            <li>Fonte: Script Comercial v1.8, etapa "Tratamento de objecoes".</li>
+            <li>Fonte: Processo Retencao v2.1, etapa &quot;Tratar causa antes do desconto&quot;.</li>
+            <li>Fonte: Script Comercial v1.8, etapa &quot;Tratamento de objecoes&quot;.</li>
             <li>Contexto anexado: {selected.protocol}, dados pessoais mascarados.</li>
           </ul>
           <div className="pill-row">
