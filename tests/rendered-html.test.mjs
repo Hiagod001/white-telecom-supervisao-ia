@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
-test("White Telecom product source includes the requested surfaces", async () => {
+test("Uai Telecom product source includes the requested surfaces", async () => {
   const [page, layout, hosting] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(layout, /White Telecom Supervisao IA/);
-  assert.match(page, /White Telecom Supervisao IA/);
+  assert.match(layout, /Uai Telecom - Supervisao IA/);
+  assert.match(page, /Uai Telecom/);
   assert.doesNotMatch(page, /Delipe|Cota mensal|500 analises/i);
   assert.match(page, /OperatorPanel/);
   assert.match(page, /Cadastrar novo processo/);
