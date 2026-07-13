@@ -1678,7 +1678,7 @@ function AlertsCenter({
             <span className="alert-case-main"><strong>{alert.type}</strong><small>{alert.evidence}</small></span>
             <span className="alert-case-meta"><strong>{alert.severity}</strong><small>{alert.owner} - {alert.due}</small></span>
             <span className="alert-case-status">{statusById[alert.id] ?? alert.status}</span>
-            <div className="row-actions">
+            <div className="alert-actions">
               <button onClick={() => updateAlert(alert, "Reconhecido")}>Reconhecer</button>
               <button onClick={() => updateAlert(alert, "Resolvido")}>Resolver</button>
               <button onClick={() => onNotify("Tarefa criada", `Coaching criado para ${alert.evidence}.`)}>Criar tarefa</button>
