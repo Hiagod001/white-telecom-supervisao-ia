@@ -32,7 +32,6 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
   Star,
   Target,
   UserCheck,
@@ -153,6 +152,15 @@ type IntegrationConfig = {
 type ActionToast = {
   title: string;
   body: string;
+};
+
+type ManagedClassification = {
+  value: string;
+  label: string;
+  description: string;
+  active: boolean;
+  nonScore: boolean;
+  resolved: boolean;
 };
 
 type AgentRankingRow = {
@@ -506,9 +514,10 @@ function buildAlerts(conversations: Conversation[]): AlertItem[] {
 const navItems = [
   { id: "overview", label: "Dashboard", icon: LayoutDashboard, count: 0 },
   { id: "conversations", label: "Conversas", icon: MessageCircle, count: 0 },
-  { id: "agents", label: "Vendedores", icon: Users, count: 0 },
+  { id: "agents", label: "Atendentes", icon: Users, count: 0 },
   { id: "kpis", label: "KPIs", icon: BarChart3, count: 0 },
   { id: "adherence", label: "Aderencia ao Script", icon: ClipboardCheck, count: 0 },
+  { id: "recurrence", label: "Reincidencia", icon: RefreshCw, count: 0 },
   { id: "ai", label: "Agente de IA", icon: Bot, count: 0 },
   { id: "processes", label: "Processos", icon: FileText, count: 0 },
   { id: "classifications", label: "Classificacoes", icon: Target, count: 0 },
@@ -528,7 +537,7 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>("Gestor");
   const [period, setPeriod] = useState("Mes atual");
-  const [sector, setSector] = useState("Todos");
+  const [sector, setSector] = useState("Atendimento");
   const [channel, setChannel] = useState("Todos");
   const [search, setSearch] = useState("");
   const [onlyEligible, setOnlyEligible] = useState(false);
@@ -543,6 +552,7 @@ export default function Home() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [language, setLanguage] = useState<"PT" | "ES">("PT");
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
+  const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([
     { id: 1, name: "Gabriel Coordenador", email: "gestor@uaitelecom.com.br", role: "Gestor", team: "Qualidade", status: "Ativo" },
     { id: 2, name: "Ana Operadora", email: "ana@uaitelecom.com.br", role: "Operador", team: "Suporte N1", status: "Ativo" },
@@ -619,71 +629,6 @@ export default function Home() {
   }, [channel, conversations, onlyEligible, period, search, sector]);
 
   const selected = filtered.find((conversation) => conversation.id === selectedId) ?? filtered[0] ?? conversations[0];
-
-  const metrics = useMemo(() => {
-    const eligible = filtered.filter((conversation) => conversation.eligible);
-    const processed = filtered.filter((conversation) => conversation.confidence >= 0.66);
-    const critical = filtered.filter((conversation) => conversation.alerts.length > 0 && conversation.score < 6);
-    const resolved = filtered.filter((conversation) => conversation.resolution === "Resolvido");
-    return [
-      {
-        label: "Atendimentos recebidos",
-        value: filtered.length.toLocaleString("pt-BR"),
-        detail: "1000 gerados em 90 dias; filtro atual aplicado.",
-        formula: "contagem de atendimentos importados",
-        icon: MessageCircle,
-      },
-      {
-        label: "Processado pela IA",
-        value: `${processed.length} / ${percent((processed.length / Math.max(filtered.length, 1)) * 100)}`,
-        detail: "Analises com schema validado e confianca minima.",
-        formula: "processados / recebidos",
-        icon: Sparkles,
-      },
-      {
-        label: "Elegiveis",
-        value: eligible.length.toLocaleString("pt-BR"),
-        detail: "Inelegiveis nao penalizam desempenho.",
-        formula: "atendimentos aplicaveis ao processo",
-        icon: CheckCircle2,
-      },
-      {
-        label: "Nota media",
-        value: average(eligible.map((item) => item.score)).toFixed(1),
-        detail: "Media ponderada por atendimentos elegiveis.",
-        formula: "soma(nota etapa * peso) / pesos aplicaveis",
-        icon: Star,
-      },
-      {
-        label: "Aderencia media",
-        value: percent(average(eligible.map((item) => item.adherence))),
-        detail: "Somente casos com processo aplicavel.",
-        formula: "etapas cumpridas ponderadas / etapas aplicaveis",
-        icon: ClipboardCheck,
-      },
-      {
-        label: "Primeira resposta",
-        value: `${Math.round(average(filtered.map((item) => item.firstResponse)))} min`,
-        detail: "Fonte: Blip/WhatsApp e PBX quando disponivel.",
-        formula: "inicio ate primeira resposta humana",
-        icon: Clock3,
-      },
-      {
-        label: "Taxa de resolucao",
-        value: percent((resolved.length / Math.max(filtered.length, 1)) * 100),
-        detail: "Resolvido segundo evidencias do atendimento.",
-        formula: "resolvidos / analisados",
-        icon: UserCheck,
-      },
-      {
-        label: "Alertas criticos",
-        value: critical.length.toString(),
-        detail: "Abertos, reconhecidos ou em prazo.",
-        formula: "alertas com severidade alta ou critica",
-        icon: AlertTriangle,
-      },
-    ];
-  }, [filtered]);
 
   const trendData = useMemo(() => {
     const buckets = new Map<string, { date: string; volume: number; scoreTotal: number; adherenceTotal: number }>();
@@ -767,6 +712,9 @@ export default function Home() {
     [alerts, filtered, managedProcesses],
   );
   const unreadNotifications = notifications.filter((item) => !readNotificationIds.includes(item.id));
+  const operationalSector: Sector = sector === "Comercial" ? "Comercial" : sector === "Retencao" ? "Retencao" : "Atendimento";
+  const peopleLabel = operationalSector === "Comercial" ? "Vendedores" : "Atendentes";
+  const navLabel = (id: string, fallback: string) => id === "agents" ? peopleLabel : fallback;
   const navCounts = useMemo(
     () => ({
       conversations: filtered.filter((row) => row.reviewStatus === "Pendente").length,
@@ -787,13 +735,16 @@ export default function Home() {
       ? "Detalhe do atendimento"
       : activeView === "operator"
         ? "Meu painel"
-        : [...navItems, ...adminNavItems].find((item) => item.id === activeView)?.label ?? "Dashboard";
+        : activeView === "agents"
+          ? peopleLabel
+          : [...navItems, ...adminNavItems].find((item) => item.id === activeView)?.label ?? "Dashboard";
   const activeSubtitle: Record<string, string> = {
-    overview: "Visao geral da performance da operacao",
+    overview: operationalSector === "Comercial" ? "Visao geral da performance comercial" : operationalSector === "Retencao" ? "Visao geral da retencao e risco de churn" : "Visao geral da performance de atendimento",
     conversations: "Gerencie e analise conversas de atendimento",
-    agents: "Performance individual dos operadores",
+    agents: operationalSector === "Comercial" ? "Acompanhe a performance dos vendedores" : "Acompanhe a performance dos atendentes",
     kpis: "Indicadores de performance da equipe",
     adherence: "Analise de execucao das etapas dos processos",
+    recurrence: "Clientes que voltaram ao atendimento - sinal de FCR e risco de churn",
     ai: "Pergunte sobre seus dados, KPIs, alertas e muito mais",
     processes: "Configure os processos que a IA utiliza para avaliar conversas",
     classifications: "Gerencie as classificacoes usadas pela IA",
@@ -825,8 +776,20 @@ export default function Home() {
   };
 
   const openMetric = (label: string) => {
+    if (label.includes("Alerta")) {
+      setFocusedAlertId(null);
+      setActiveView("alerts");
+      return;
+    }
+    if (label.includes("Reincid")) {
+      setActiveView("recurrence");
+      return;
+    }
+    if (label.includes("Vendedor") || label.includes("Atendente")) {
+      setActiveView("agents");
+      return;
+    }
     setActiveView("conversations");
-    if (label.includes("Alertas")) setSearch("Nota abaixo");
     if (label.includes("Elegiveis")) setOnlyEligible(true);
   };
 
@@ -846,8 +809,8 @@ export default function Home() {
           </span>
         </button>
         <div className="sidebar-contexts">
-          <select value={sector} onChange={(event) => setSector(event.target.value)} aria-label="Area da operacao">
-            {["Todos", "Comercial", "Atendimento", "Retencao"].map((item) => (
+          <select value={sector} onChange={(event) => { setSector(event.target.value); setPage(1); setSearch(""); setFocusedAlertId(null); }} aria-label="Area da operacao">
+            {["Atendimento", "Comercial", "Retencao", "Todos"].map((item) => (
               <option key={item}>{item}</option>
             ))}
           </select>
@@ -861,6 +824,7 @@ export default function Home() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const dynamicCount = navCounts[item.id as keyof typeof navCounts] ?? item.count;
+            const label = navLabel(item.id, item.label);
             return (
               <button
                 key={item.id}
@@ -869,10 +833,10 @@ export default function Home() {
                   setActiveView(item.id);
                   setSidebarOpen(false);
                 }}
-                title={item.label}
+                title={label}
               >
                 <Icon size={18} aria-hidden="true" />
-                <span>{item.label}</span>
+                <span>{label}</span>
                 {dynamicCount > 0 ? <b>{dynamicCount}</b> : null}
               </button>
             );
@@ -986,16 +950,21 @@ export default function Home() {
         {loadingState !== "ready" ? (
           <StatePanel state={loadingState} />
         ) : (
-          <>
+          <div className="view-transition" key={`${activeView}-${operationalSector}`}>
             {activeView === "overview" && (
               <Overview
-                metrics={metrics}
                 onMetricClick={openMetric}
                 trendData={trendData}
                 classificationData={classificationData}
                 ranking={attendantRanking}
-                alerts={alerts}
+                alerts={alerts.filter((alert) => alert.status === "Aberto")}
                 filteredCount={filtered.length}
+                rows={filtered}
+                sector={operationalSector}
+                onAlertClick={(alertId) => {
+                  setFocusedAlertId(alertId);
+                  setActiveView("alerts");
+                }}
               />
             )}
             {activeView === "conversations" && (
@@ -1024,12 +993,12 @@ export default function Home() {
                 }}
               />
             )}
-            {activeView === "recurrence" && <Recurrence rows={filtered} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
-            {activeView === "agents" && <Agents ranking={attendantRanking} rows={filtered} />}
-            {activeView === "kpis" && <Kpis metrics={metrics} ranking={attendantRanking} trendData={trendData} />}
+            {activeView === "recurrence" && <Recurrence rows={filtered} sector={operationalSector} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
+            {activeView === "agents" && <Agents ranking={attendantRanking} rows={filtered} sector={operationalSector} />}
+            {activeView === "kpis" && <Kpis ranking={attendantRanking} rows={filtered} sector={operationalSector} />}
             {activeView === "operator" && <OperatorPanel rows={filtered.filter((row) => row.attendant === "Ana Costa")} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
             {activeView === "adherence" && <Adherence rows={filtered} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
-            {activeView === "alerts" && <AlertsCenter alerts={alerts} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} onNotify={notify} />}
+            {activeView === "alerts" && <AlertsCenter alerts={alerts} focusAlertId={focusedAlertId} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} onNotify={notify} />}
             {activeView === "ai" && (
               <AiAgent
                 rows={filtered}
@@ -1039,7 +1008,7 @@ export default function Home() {
               />
             )}
             {activeView === "processes" && <Processes processes={managedProcesses} setProcesses={setManagedProcesses} onNotify={notify} />}
-            {activeView === "classifications" && <Classifications onNotify={notify} />}
+            {activeView === "classifications" && <Classifications sector={operationalSector} onNotify={notify} />}
             {activeView === "reports" && <Reports rows={filtered} />}
             {activeView === "integrations" && <Integrations configs={integrationConfigs} setConfigs={setIntegrationConfigs} onNotify={notify} />}
             {activeView === "admin" && (
@@ -1051,7 +1020,7 @@ export default function Home() {
                 onNotify={notify}
               />
             )}
-          </>
+          </div>
         )}
         {customPeriodOpen ? (
           <div className="modal-backdrop" role="presentation" onClick={() => setCustomPeriodOpen(false)}>
@@ -1119,26 +1088,70 @@ function StatePanel({ state }: { state: "loading" | "error" | "empty" }) {
 }
 
 function Overview({
-  metrics,
   onMetricClick,
   trendData,
   classificationData,
   ranking,
   alerts,
   filteredCount,
+  rows,
+  sector,
+  onAlertClick,
 }: {
-  metrics: Array<{ label: string; value: string; detail: string; formula: string; icon: typeof Activity }>;
   onMetricClick: (label: string) => void;
   trendData: Array<{ date: string; volume: number; nota: number; aderencia: number }>;
   classificationData: Array<{ name: string; value: number }>;
   ranking: Array<{ name: string; team: string; volume: number; score: number; adherence: number; trend: string }>;
   alerts: AlertItem[];
   filteredCount: number;
+  rows: Conversation[];
+  sector: Sector;
+  onAlertClick: (alertId: string) => void;
 }) {
+  const eligible = rows.filter((row) => row.eligible);
+  const resolved = rows.filter((row) => row.resolution === "Resolvido");
+  const sales = rows.filter((row) => row.classification === "Venda concluida");
+  const retained = rows.filter((row) => row.classification === "Retido");
+  const recurrent = rows.filter((row) => row.recurrences >= 3);
+  const contextualMetrics = sector === "Comercial"
+    ? [
+        { label: "Leads recebidos", value: String(rows.length), detail: "Conversas comerciais no periodo.", formula: "contagem de leads", icon: MessageCircle },
+        { label: "Vendas fechadas", value: String(sales.length), detail: "Classificacao Venda concluida.", formula: "vendas concluidas", icon: Target },
+        { label: "Taxa de conversao", value: percent((sales.length / Math.max(eligible.length, 1)) * 100), detail: "Somente leads elegiveis.", formula: "vendas / leads elegiveis", icon: LineChart },
+        { label: "Nota comercial", value: average(eligible.map((row) => row.score)).toFixed(1), detail: "Qualidade media das abordagens.", formula: "media das notas elegiveis", icon: Star },
+        { label: "Aderencia ao processo", value: percent(average(eligible.map((row) => row.adherence))), detail: "Execucao do roteiro comercial.", formula: "aderencia media", icon: ClipboardCheck },
+        { label: "Alertas comerciais", value: String(alerts.length), detail: "Riscos que exigem revisao.", formula: "alertas abertos", icon: AlertTriangle },
+      ]
+    : sector === "Retencao"
+      ? [
+          { label: "Atendimentos de retencao", value: String(rows.length), detail: "Contatos tratados no periodo.", formula: "contagem de atendimentos", icon: MessageCircle },
+          { label: "Clientes retidos", value: String(retained.length), detail: "Desfecho classificado como Retido.", formula: "retidos", icon: UserCheck },
+          { label: "Taxa de retencao", value: percent((retained.length / Math.max(eligible.length, 1)) * 100), detail: "Sobre casos elegiveis.", formula: "retidos / elegiveis", icon: LineChart },
+          { label: "Reincidencias", value: String(recurrent.length), detail: "Clientes com 3 ou mais contatos.", formula: "casos reincidentes", icon: RefreshCw },
+          { label: "Nota media", value: average(eligible.map((row) => row.score)).toFixed(1), detail: "Qualidade da negociacao.", formula: "media das notas", icon: Star },
+          { label: "Alertas de churn", value: String(alerts.length), detail: "Riscos ativos no periodo.", formula: "alertas abertos", icon: AlertTriangle },
+        ]
+      : [
+          { label: "Atendimentos recebidos", value: String(rows.length), detail: "Contatos de suporte no periodo.", formula: "contagem de atendimentos", icon: MessageCircle },
+          { label: "Resolvidos", value: String(resolved.length), detail: "Resolvidos com evidencia na conversa.", formula: "desfechos resolvidos", icon: CheckCircle2 },
+          { label: "Taxa de resolucao", value: percent((resolved.length / Math.max(rows.length, 1)) * 100), detail: "Resolucao sobre atendimentos analisados.", formula: "resolvidos / analisados", icon: UserCheck },
+          { label: "Primeira resposta", value: `${Math.round(average(rows.map((row) => row.firstResponse)))} min`, detail: "Tempo ate a primeira resposta humana.", formula: "media da primeira resposta", icon: Clock3 },
+          { label: "Reincidencias", value: String(recurrent.length), detail: "Clientes com 3 ou mais contatos em 14 dias.", formula: "casos reincidentes", icon: RefreshCw },
+          { label: "Alertas de atendimento", value: String(alerts.length), detail: "Riscos operacionais em aberto.", formula: "alertas abertos", icon: AlertTriangle },
+        ];
+  const contextChart = sector === "Comercial"
+    ? trendData.map((item) => ({ ...item, resultado: Math.max(0, Math.round(item.volume * 0.22 + item.nota / 3)) }))
+    : sector === "Atendimento"
+      ? trendData.map((item) => ({ ...item, resultado: Math.min(item.volume, Math.round(item.volume * (item.aderencia / 100))) }))
+      : trendData.map((item) => ({ ...item, resultado: Math.max(0, Math.round(item.volume * 0.38)) }));
+  const chartTitle = sector === "Comercial" ? "Leads e vendas por periodo" : sector === "Atendimento" ? "Atendimentos e resolucoes por periodo" : "Retencoes por periodo";
+  const resultLabel = sector === "Comercial" ? "vendas" : sector === "Atendimento" ? "resolucoes" : "retencoes";
+  const peopleTitle = sector === "Comercial" ? "Ranking de vendedores" : "Ranking de atendentes";
+  const steps = processSteps[sector].map((step, index) => [step.name, Math.max(42, Math.round(86 - step.weight * 8 - index * 5))] as [string, number]);
   return (
     <div className="stack">
       <section className="metric-grid">
-        {metrics.slice(0, 6).map((metric) => {
+        {contextualMetrics.map((metric) => {
           const Icon = metric.icon;
           return (
             <button className="metric-card" key={metric.label} onClick={() => onMetricClick(metric.label)}>
@@ -1155,10 +1168,10 @@ function Overview({
 
       <section className="content-grid two-one">
         <article className="panel">
-          <PanelTitle icon={LineChart} title="Volume e nota por periodo" subtitle={`${filteredCount} atendimentos analisados; inelegiveis ficam fora da media de desempenho.`} />
+          <PanelTitle icon={LineChart} title={chartTitle} subtitle={`${filteredCount} registros analisados; clique nos indicadores para aprofundar.`} />
           <div className="chart-box">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={trendData}>
+              <ComposedChart data={contextChart}>
                 <CartesianGrid stroke="#292929" vertical={false} />
                 <XAxis dataKey="date" stroke="#9a9a9a" />
                 <YAxis yAxisId="left" stroke="#9a9a9a" />
@@ -1166,14 +1179,14 @@ function Overview({
                 <Tooltip contentStyle={{ background: "#151515", border: "1px solid #363636", color: "#fff" }} />
                 <Legend />
                 <Bar yAxisId="left" dataKey="volume" fill={appConfig.colors.accent} radius={[4, 4, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="nota" stroke={appConfig.colors.success} strokeWidth={3} dot={false} />
+                <Line yAxisId="left" type="monotone" dataKey="resultado" name={resultLabel} stroke={appConfig.colors.success} strokeWidth={3} dot={{ r: 2 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         </article>
 
         <article className="panel">
-          <PanelTitle icon={BarChart3} title="Classificacoes" subtitle="Taxonomia personalizavel e versionada." />
+          <PanelTitle icon={BarChart3} title={sector === "Comercial" ? "Desfechos comerciais" : sector === "Atendimento" ? "Desfechos de atendimento" : "Motivos de retencao"} subtitle="Classificacoes aplicadas no contexto atual." />
           <div className="chart-box small">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -1199,7 +1212,7 @@ function Overview({
 
       <section className="content-grid">
         <article className="panel">
-          <PanelTitle icon={Users} title="Ranking justo de atendentes" subtitle="Sinaliza amostra pequena e usa somente atendimentos elegiveis." />
+          <PanelTitle icon={Users} title={peopleTitle} subtitle="Sinaliza amostra pequena e usa somente atendimentos elegiveis." />
           <div className="ranking-list">
             {ranking.map((row, index) => (
               <div className="ranking-row" key={row.name}>
@@ -1219,12 +1232,7 @@ function Overview({
         <article className="panel">
           <PanelTitle icon={ClipboardCheck} title="Etapas com menor aderencia" subtitle="Clique nas celulas nas telas de aderencia para chegar aos atendimentos." />
           <div className="step-bars">
-            {[
-              ["Confirmacao de resolucao", 58],
-              ["Descoberta da necessidade", 63],
-              ["Tratar causa antes do desconto", 49],
-              ["Registro correto no ERP", 71],
-            ].map(([name, value]) => (
+            {steps.map(([name, value]) => (
               <div key={name}>
                 <span>{name}</span>
                 <b>{value}%</b>
@@ -1238,13 +1246,14 @@ function Overview({
           <PanelTitle icon={AlertTriangle} title="Alertas recentes" subtitle="Ordenados por severidade, impacto e prazo." />
           <div className="alert-list">
             {alerts.slice(0, 6).map((alert) => (
-              <div className={`alert-row ${alert.severity.toLowerCase()}`} key={alert.id}>
+              <button className={`alert-row ${alert.severity.toLowerCase()}`} key={alert.id} onClick={() => onAlertClick(alert.id)}>
                 <span className="alert-severity">{alert.severity}</span>
                 <div className="alert-copy">
                   <strong>{alert.type}</strong>
                   <small>{alert.evidence}</small>
                 </div>
-              </div>
+                <ChevronRight size={16} />
+              </button>
             ))}
           </div>
         </article>
@@ -1594,51 +1603,79 @@ function SectorView({ sector, rows, onOpen }: { sector: Sector; rows: Conversati
   );
 }
 
-function Recurrence({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: string) => void }) {
-  const recurrent = rows.filter((row) => row.recurrences >= 3).slice(0, 12);
+function Recurrence({ rows, sector, onOpen }: { rows: Conversation[]; sector: Sector; onOpen: (id: string) => void }) {
+  const [mode, setMode] = useState<"Atendimento" | "Lead">("Atendimento");
+  const recurrent = rows.filter((row) => row.recurrences >= 3);
+  const recurrentClients = Array.from(new Map(recurrent.map((row) => [row.client, row])).values());
+  const highRisk = recurrent.filter((row) => row.recurrences >= 5 || row.score < 5.5);
+  const visibleRows = (mode === "Atendimento" ? recurrent : recurrentClients).slice(0, 14);
   return (
-    <section className="panel">
-      <PanelTitle icon={RefreshCw} title="Clientes reincidentes em 14 dias" subtitle="Score e recomendacao sao explicaveis; nao sao tratados como verdade absoluta." />
-      <div className="cards-list">
-        {recurrent.map((row) => (
-          <button className="case-card" key={row.id} onClick={() => onOpen(row.id)}>
-            <span><strong>{row.client}</strong><small>{row.recurrences} contatos - {row.channel}</small></span>
-            <span>{row.resolution}<small>OS e historico IXC simulados</small></span>
-            <span className="risk">Ligar apos visita tecnica</span>
-          </button>
-        ))}
+    <section className="stack recurrence-workspace">
+      <div className="kpi-strip recurrence-stats">
+        <MiniStat label="Atendimentos recorrentes" value={String(recurrent.length)} />
+        <MiniStat label="Clientes reincidentes" value={String(recurrentClients.length)} />
+        <MiniStat label="Taxa de reincidencia" value={percent((recurrent.length / Math.max(rows.length, 1)) * 100)} />
+        <MiniStat label="Alto risco" value={String(highRisk.length)} />
       </div>
+      <article className="panel recurrence-panel">
+        <div className="recurrence-heading">
+          <PanelTitle icon={RefreshCw} title="Atendimentos recorrentes" subtitle={`Contexto ${sector}: clientes que retornaram em ate 14 dias.`} />
+          <div className="segmented-control" role="tablist" aria-label="Agrupamento da reincidencia">
+            <button role="tab" aria-selected={mode === "Atendimento"} className={mode === "Atendimento" ? "active" : ""} onClick={() => setMode("Atendimento")}>Por atendimento</button>
+            <button role="tab" aria-selected={mode === "Lead"} className={mode === "Lead" ? "active" : ""} onClick={() => setMode("Lead")}>Por lead</button>
+          </div>
+        </div>
+        <div className="recurrence-table-head"><span>{mode === "Atendimento" ? "Atendimento" : "Cliente"}</span><span>Historico</span><span>Risco</span><span>Acao</span></div>
+        <div className="cards-list recurrence-list">
+          {visibleRows.map((row) => (
+            <button className="recurrence-row" key={`${mode}-${row.id}`} onClick={() => onOpen(row.id)}>
+              <span><strong>{mode === "Atendimento" ? row.protocol : row.client}</strong><small>{mode === "Atendimento" ? `${row.client} - ${row.channel}` : `${row.recurrences} contatos em 14 dias`}</small></span>
+              <span><strong>{row.resolution}</strong><small>{row.classification}</small></span>
+              <span className={row.recurrences >= 5 || row.score < 5.5 ? "risk high" : "risk"}>{row.recurrences >= 5 || row.score < 5.5 ? "Alto" : "Atencao"}</span>
+              <span className="row-action">Abrir conversa <ChevronRight size={15} /></span>
+            </button>
+          ))}
+          {!visibleRows.length ? <div className="empty-alerts"><RefreshCw size={22} /><strong>Nenhuma reincidencia no filtro atual</strong><p>Altere o periodo ou o contexto operacional.</p></div> : null}
+        </div>
+      </article>
     </section>
   );
 }
 
-function Agents({ ranking, rows }: { ranking: Array<{ name: string; team: string; volume: number; score: number; adherence: number; trend: string }>; rows: Conversation[] }) {
-  const selected = ranking[0];
+function Agents({ ranking, rows, sector }: { ranking: AgentRankingRow[]; rows: Conversation[]; sector: Sector }) {
+  const [selectedName, setSelectedName] = useState(ranking[0]?.name ?? "");
+  const selected = ranking.find((row) => row.name === selectedName) ?? ranking[0];
+  const personLabel = sector === "Comercial" ? "vendedor" : "atendente";
+  const selectedRows = rows.filter((row) => row.attendant === selected?.name);
+  const resolved = selectedRows.filter((row) => row.resolution === "Resolvido").length;
+  const sales = selectedRows.filter((row) => row.classification === "Venda concluida").length;
   return (
-    <section className="content-grid two-one">
-      <article className="panel">
-        <PanelTitle icon={Users} title="Lista e ranking" subtitle="Comparacao nominal pode ser desabilitada por permissao." />
-        <div className="ranking-list">
-          {ranking.map((row) => (
-            <div className="ranking-row" key={row.name}>
-              <span><strong>{row.name}</strong><small>{row.team}</small></span>
+    <section className="people-workspace">
+      <article className="panel people-list-panel">
+        <PanelTitle icon={Users} title={sector === "Comercial" ? "Vendedores" : "Atendentes"} subtitle={`Passe o mouse e selecione um ${personLabel} para abrir o resumo individual.`} />
+        <div className="people-list">
+          {ranking.map((row, index) => (
+            <button className={selected?.name === row.name ? "active" : ""} key={row.name} onClick={() => setSelectedName(row.name)}>
+              <b>{index + 1}</b>
+              <span><strong>{row.name}</strong><small>{row.team} - {row.volume} elegiveis</small></span>
               <em>{row.score.toFixed(1)}</em>
-              <small>{row.volume} elegiveis</small>
-              <small>{percent(row.adherence)}</small>
-            </div>
+              <ChevronRight size={16} />
+            </button>
           ))}
         </div>
       </article>
-      <article className="panel">
-        <PanelTitle icon={UserCheck} title={`Perfil individual: ${selected?.name ?? "Atendente"}`} subtitle="Feedback automatico exige evidencias e volume de casos." />
-        <div className="summary-grid one">
-          <MiniStat label="Nota consolidada" value={selected?.score.toFixed(1) ?? "0.0"} />
+      <article className="panel person-detail-panel" key={selected?.name}>
+        <PanelTitle icon={UserCheck} title={selected?.name ?? (sector === "Comercial" ? "Vendedor" : "Atendente")} subtitle={`Resumo individual do ${personLabel} no periodo selecionado.`} />
+        <div className="person-score-row">
+          <div><small>Nota consolidada</small><strong>{selected?.score.toFixed(1) ?? "0.0"}</strong><span className="positive">{selected?.trend ?? "0.0"} no periodo</span></div>
           <MiniStat label="Aderencia" value={percent(selected?.adherence ?? 0)} />
-          <MiniStat label="Volume analisado" value={rows.filter((row) => row.attendant === selected?.name).length.toString()} />
-          <div className="info-card wide">
-            <h3>Feedback continuo</h3>
-            <p>Voce melhorou na apresentacao de planos em relacao a semana anterior, mas ainda precisa confirmar a necessidade do cliente antes de oferecer uma solucao. Base: {selected?.volume ?? 0} casos elegiveis.</p>
-          </div>
+          <MiniStat label={sector === "Comercial" ? "Vendas" : "Resolvidos"} value={String(sector === "Comercial" ? sales : resolved)} />
+          <MiniStat label="Volume analisado" value={String(selectedRows.length)} />
+        </div>
+        <div className="person-progress"><span><strong>{sector === "Comercial" ? "Conversao" : "Taxa de resolucao"}</strong><b>{percent(((sector === "Comercial" ? sales : resolved) / Math.max(selectedRows.length, 1)) * 100)}</b></span><div><i style={{ width: `${Math.min(100, ((sector === "Comercial" ? sales : resolved) / Math.max(selectedRows.length, 1)) * 100)}%` }} /></div></div>
+        <div className="info-card wide contextual-feedback">
+          <h3>Feedback continuo</h3>
+          <p>{sector === "Comercial" ? "Boa evolucao na apresentacao de planos. Priorize descoberta da necessidade antes da oferta e registre o motivo quando o lead nao avancar." : "Boa evolucao no acolhimento e diagnostico. Reforce a confirmacao de resolucao antes de encerrar e informe claramente o proximo passo ao cliente."}</p>
         </div>
       </article>
     </section>
@@ -1646,15 +1683,51 @@ function Agents({ ranking, rows }: { ranking: Array<{ name: string; team: string
 }
 
 function Kpis({
-  metrics,
   ranking,
-  trendData,
+  rows,
+  sector,
 }: {
-  metrics: Array<{ label: string; value: string; detail: string; icon: typeof Activity }>;
-  ranking: Array<{ name: string; team: string; volume: number; score: number; adherence: number; trend: string }>;
-  trendData: Array<{ date: string; volume: number; nota: number; aderencia: number }>;
+  ranking: AgentRankingRow[];
+  rows: Conversation[];
+  sector: Sector;
 }) {
-  const cards = [metrics[1], metrics[3], metrics[4], metrics[6]].filter(Boolean);
+  const eligible = rows.filter((row) => row.eligible);
+  const sales = rows.filter((row) => row.classification === "Venda concluida");
+  const resolved = rows.filter((row) => row.resolution === "Resolvido");
+  const retained = rows.filter((row) => row.classification === "Retido");
+  const recurrent = rows.filter((row) => row.recurrences >= 3);
+  const cards = sector === "Comercial"
+    ? [
+        { label: "Leads elegiveis", value: String(eligible.length), detail: "Base valida para conversao", icon: MessageCircle },
+        { label: "Vendas fechadas", value: String(sales.length), detail: "Desfechos de venda concluida", icon: Target },
+        { label: "Conversao", value: percent((sales.length / Math.max(eligible.length, 1)) * 100), detail: "Vendas sobre leads elegiveis", icon: LineChart },
+        { label: "Aderencia comercial", value: percent(average(eligible.map((row) => row.adherence))), detail: "Execucao do processo de vendas", icon: ClipboardCheck },
+      ]
+    : sector === "Retencao"
+      ? [
+          { label: "Casos elegiveis", value: String(eligible.length), detail: "Atendimentos avaliaveis", icon: MessageCircle },
+          { label: "Clientes retidos", value: String(retained.length), detail: "Desfecho Retido", icon: UserCheck },
+          { label: "Taxa de retencao", value: percent((retained.length / Math.max(eligible.length, 1)) * 100), detail: "Retidos sobre elegiveis", icon: LineChart },
+          { label: "Reincidentes", value: String(recurrent.length), detail: "Tres ou mais contatos", icon: RefreshCw },
+        ]
+      : [
+          { label: "Atendimentos", value: String(rows.length), detail: "Volume recebido no suporte", icon: MessageCircle },
+          { label: "Resolvidos", value: String(resolved.length), detail: "Resolucao confirmada", icon: CheckCircle2 },
+          { label: "Taxa de resolucao", value: percent((resolved.length / Math.max(rows.length, 1)) * 100), detail: "Resolvidos sobre analisados", icon: UserCheck },
+          { label: "Primeira resposta", value: `${Math.round(average(rows.map((row) => row.firstResponse)))} min`, detail: "Media ate resposta humana", icon: Clock3 },
+        ];
+  const buckets = new Map<string, { date: string; volume: number; resultado: number; adherenceTotal: number }>();
+  rows.forEach((row) => {
+    const date = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(row.start);
+    const bucket = buckets.get(date) ?? { date, volume: 0, resultado: 0, adherenceTotal: 0 };
+    bucket.volume += 1;
+    bucket.resultado += sector === "Comercial" ? Number(row.classification === "Venda concluida") : sector === "Retencao" ? Number(row.classification === "Retido") : Number(row.resolution === "Resolvido");
+    bucket.adherenceTotal += row.adherence;
+    buckets.set(date, bucket);
+  });
+  const chartData = Array.from(buckets.values()).slice(0, 14).reverse().map((bucket) => ({ ...bucket, aderencia: Math.round(bucket.adherenceTotal / Math.max(bucket.volume, 1)) }));
+  const peopleLabel = sector === "Comercial" ? "vendedores" : "atendentes";
+  const outcomeLabel = sector === "Comercial" ? "vendas" : sector === "Retencao" ? "retencoes" : "resolucoes";
   return (
     <section className="stack">
       <div className="kpi-strip">
@@ -1665,20 +1738,20 @@ function Kpis({
       </div>
       <section className="content-grid two-one">
         <article className="panel chart-panel">
-          <PanelTitle icon={LineChart} title="Performance por operador" subtitle="Volume, nota e aderencia no periodo selecionado." />
+          <PanelTitle icon={LineChart} title={sector === "Comercial" ? "Funil e conversoes por dia" : sector === "Atendimento" ? "Volume e resolucao por dia" : "Volume e retencoes por dia"} subtitle={`Grafico especifico da operacao de ${sector.toLowerCase()}.`} />
           <ResponsiveContainer width="100%" height={310}>
-            <ComposedChart data={trendData}>
+            <ComposedChart data={chartData}>
               <CartesianGrid stroke="#292929" vertical={false} />
               <XAxis dataKey="date" stroke="#8e8e8e" fontSize={11} />
               <YAxis stroke="#8e8e8e" fontSize={11} />
               <Tooltip contentStyle={{ background: "#151515", border: "1px solid #343434", borderRadius: 6 }} />
               <Bar dataKey="volume" fill="#ef2b2d" radius={[4, 4, 0, 0]} />
-              <Line type="monotone" dataKey="aderencia" stroke="#ffffff" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="resultado" name={outcomeLabel} stroke="#ffffff" strokeWidth={2} dot={{ r: 2 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </article>
         <article className="panel">
-          <PanelTitle icon={Users} title="Ranking de operadores" subtitle="Melhores resultados por nota e aderencia." />
+          <PanelTitle icon={Users} title={`Ranking de ${peopleLabel}`} subtitle={`Melhores resultados entre ${peopleLabel} no periodo.`} />
           <div className="ranking-list">
             {ranking.slice(0, 6).map((row, index) => <div key={row.name}><b>{index + 1}</b><span><strong>{row.name}</strong><small>{row.team} - {row.volume} conversas</small></span><strong>{row.score.toFixed(1)}</strong></div>)}
           </div>
@@ -1688,34 +1761,59 @@ function Kpis({
   );
 }
 
-function Classifications({ onNotify }: { onNotify: (title: string, body: string) => void }) {
-  const [items, setItems] = useState([
-    { value: "bad_experience", label: "Atendimento ruim", description: "O cliente teve uma experiencia negativa durante o atendimento.", active: true, nonScore: false },
-    { value: "wrong_channel", label: "Canal errado", description: "A solicitacao nao era destinada ao setor atual.", active: true, nonScore: true },
-    { value: "price_objection", label: "Cliente achou caro", description: "A conversa nao avancou por objecao de preco.", active: true, nonScore: false },
-    { value: "ghost", label: "Cliente parou de responder", description: "O cliente deixou de responder sem desfecho definido.", active: true, nonScore: true },
-    { value: "still_active", label: "Em andamento", description: "Conversa ainda em andamento, sem desfecho.", active: true, nonScore: true },
-    { value: "competitor", label: "Foi para concorrente", description: "O cliente decidiu contratar outro provedor.", active: true, nonScore: false },
-    { value: "technical_issue", label: "Problema tecnico", description: "A conversa foi interrompida por falha tecnica.", active: true, nonScore: true },
-    { value: "no_coverage", label: "Sem cobertura na regiao", description: "A Uai Telecom ainda nao atende o endereco informado.", active: true, nonScore: true },
-    { value: "won", label: "Venda fechada", description: "Cliente concluiu a contratacao com sucesso.", active: true, nonScore: false },
-    { value: "no_follow_up", label: "Operador nao retornou", description: "O atendimento ficou sem continuidade da equipe.", active: true, nonScore: false },
-  ]);
+function Classifications({ sector, onNotify }: { sector: Sector; onNotify: (title: string, body: string) => void }) {
+  const [itemsBySector, setItemsBySector] = useState<Record<Sector, ManagedClassification[]>>({
+    Atendimento: [
+      { value: "agendamento_realizado", label: "Agendamento realizado", description: "Visita tecnica, mudanca de local ou segundo ponto agendados com data e responsavel confirmados.", active: true, nonScore: false, resolved: true },
+      { value: "canal_errado", label: "Canal errado", description: "Solicitacao destinada a outro setor e corretamente encaminhada.", active: true, nonScore: true, resolved: false },
+      { value: "customer_abandoned", label: "Cliente nao retornou", description: "Cliente deixou de responder antes da confirmacao de resolucao.", active: true, nonScore: true, resolved: false },
+      { value: "cobranca_os_respondida", label: "Cobranca de O.S respondida", description: "Prazo ou situacao da ordem de servico foi consultado e informado adequadamente.", active: true, nonScore: false, resolved: true },
+      { value: "escalated_other_sector", label: "Encaminhado para outro setor", description: "Assunto fora do escopo tecnico foi transferido com contexto suficiente.", active: true, nonScore: true, resolved: false },
+      { value: "escalated_retention", label: "Encaminhado para retencao", description: "Sinal de cancelamento foi identificado e encaminhado conforme processo.", active: true, nonScore: false, resolved: true },
+      { value: "technical_disconnection", label: "Falha tecnica do canal", description: "Atendimento interrompido por queda do WhatsApp, WebChat ou conexao do cliente.", active: true, nonScore: true, resolved: false },
+      { value: "inatividade_sem_sinalizacao", label: "Inatividade sem sinalizacao", description: "Conversa ficou inativa sem orientacao clara sobre o proximo passo.", active: true, nonScore: false, resolved: false },
+      { value: "unresolved", label: "Nao resolvido", description: "Diagnostico ou procedimento nao resolveu a solicitacao do cliente.", active: true, nonScore: false, resolved: false },
+      { value: "os_aberta", label: "O.S aberta", description: "Ordem de servico registrada e proximos passos informados ao cliente.", active: true, nonScore: false, resolved: true },
+      { value: "problema_massivo", label: "Problema massivo na rede", description: "Incidente geral afetando varios clientes, fora da responsabilidade individual.", active: true, nonScore: true, resolved: false },
+      { value: "resolved", label: "Resolvido", description: "Problema resolvido na conversa e confirmado pelo cliente.", active: true, nonScore: false, resolved: true },
+      { value: "bot_only", label: "Sem atendimento humano", description: "Conversa finalizada ainda na triagem automatica.", active: true, nonScore: true, resolved: false },
+      { value: "senha_alterada", label: "Senha alterada", description: "Troca de senha concluida e reconexao orientada ao cliente.", active: true, nonScore: false, resolved: true },
+    ],
+    Comercial: [
+      { value: "won", label: "Venda fechada", description: "Cliente concluiu a contratacao com sucesso.", active: true, nonScore: false, resolved: true },
+      { value: "lead_active", label: "Lead potencial em andamento", description: "Negociacao ativa com proximo contato definido.", active: true, nonScore: false, resolved: false },
+      { value: "price_objection", label: "Cliente achou caro", description: "Negociacao nao avancou por objecao de preco.", active: true, nonScore: false, resolved: false },
+      { value: "no_coverage", label: "Sem cobertura na regiao", description: "Endereco ainda nao atendido pela Uai Telecom.", active: true, nonScore: true, resolved: false },
+      { value: "competitor", label: "Foi para concorrente", description: "Cliente decidiu contratar outro provedor.", active: true, nonScore: false, resolved: false },
+      { value: "ghost", label: "Cliente parou de responder", description: "Lead interrompeu a conversa sem desfecho.", active: true, nonScore: false, resolved: false },
+      { value: "invalid_contact", label: "Contato invalido", description: "Numero ou contato nao permitiu continuidade.", active: true, nonScore: true, resolved: false },
+      { value: "no_interest", label: "Sem interesse", description: "Cliente informou que nao deseja contratar no momento.", active: true, nonScore: false, resolved: false },
+    ],
+    Retencao: [
+      { value: "retained", label: "Cliente retido", description: "Cliente permaneceu apos tratamento da causa e confirmacao.", active: true, nonScore: false, resolved: true },
+      { value: "cancelled", label: "Cancelamento concluido", description: "Cancelamento confirmado apos todas as etapas aplicaveis.", active: true, nonScore: false, resolved: true },
+      { value: "technical_return", label: "Retorno tecnico agendado", description: "Causa tecnica sera tratada antes de nova negociacao.", active: true, nonScore: false, resolved: true },
+      { value: "price", label: "Motivo preco", description: "Valor foi o principal motivo de intencao de cancelamento.", active: true, nonScore: false, resolved: false },
+      { value: "instability", label: "Instabilidade recorrente", description: "Problemas de conexao motivaram a solicitacao.", active: true, nonScore: false, resolved: false },
+      { value: "change_no_coverage", label: "Mudanca sem cobertura", description: "Novo endereco nao possui disponibilidade de rede.", active: true, nonScore: true, resolved: false },
+    ],
+  });
+  const items = itemsBySector[sector];
   const [draft, setDraft] = useState({ value: "", label: "", description: "" });
 
   const addClassification = () => {
     if (!draft.value.trim() || !draft.label.trim()) return onNotify("Classificacao incompleta", "Informe valor e nome antes de adicionar.");
-    setItems((current) => [...current, { ...draft, active: true, nonScore: false }]);
+    setItemsBySector((current) => ({ ...current, [sector]: [...current[sector], { ...draft, active: true, nonScore: false, resolved: false }] }));
     setDraft({ value: "", label: "", description: "" });
-    onNotify("Classificacao criada", "A nova classificacao ja esta disponivel para a IA.");
+    onNotify("Classificacao criada", `A nova classificacao ja esta disponivel em ${sector}.`);
   };
 
   return (
     <section className="stack">
-      <article className="classification-info"><div><strong>Como a IA usa as classificacoes?</strong><p>A cada analise, a IA recebe somente as classificacoes ativas e escolhe exatamente uma. Desative sem excluir para preservar o historico.</p></div><span><b>Non-Score</b> nao entra nos KPIs de conversao</span></article>
-      <div className="kpi-strip classification-stats"><MiniStat label="Total" value={String(items.length)} /><MiniStat label="Ativas" value={String(items.filter((item) => item.active).length)} /><MiniStat label="Inativas" value={String(items.filter((item) => !item.active).length)} /></div>
-      <article className="panel classification-create"><PanelTitle icon={Plus} title="Nova classificacao" subtitle="Cadastre uma regra que podera ser escolhida nas analises futuras." /><input placeholder="valor_chave" value={draft.value} onChange={(event) => setDraft((current) => ({ ...current, value: event.target.value }))} /><input placeholder="Nome da classificacao" value={draft.label} onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))} /><input placeholder="Descricao para orientar a IA" value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /><button onClick={addClassification}><Plus size={16} /> Adicionar</button></article>
-      <article className="panel classification-table"><header><span>Value</span><span>Label</span><span>Descricao</span><span>Ativa</span></header>{items.map((item) => <div key={item.value}><code>{item.value}</code><span><strong>{item.label}</strong>{item.nonScore ? <small>Non-Score</small> : null}</span><p>{item.description}</p><button className={`switch ${item.active ? "on" : ""}`} onClick={() => { setItems((current) => current.map((entry) => entry.value === item.value ? { ...entry, active: !entry.active } : entry)); onNotify(item.active ? "Classificacao desativada" : "Classificacao ativada", item.label); }} aria-label={`${item.active ? "Desativar" : "Ativar"} ${item.label}`}><span /></button></div>)}</article>
+      <article className="classification-info"><div><strong>Como a IA usa as classificacoes de {sector}?</strong><p>A cada analise, a IA recebe somente as regras ativas deste contexto e escolhe exatamente uma. Desative sem excluir para preservar o historico.</p></div><span><b>Resolvido</b> soma na taxa de resolucao<br /><b>Non-Score</b> fica fora dos KPIs</span></article>
+      <div className="kpi-strip classification-stats"><MiniStat label="Total" value={String(items.length)} /><MiniStat label="Ativas" value={String(items.filter((item) => item.active).length)} /><MiniStat label="Resolvidas" value={String(items.filter((item) => item.resolved).length)} /><MiniStat label="Non-Score" value={String(items.filter((item) => item.nonScore).length)} /></div>
+      <article className="panel classification-create"><PanelTitle icon={Plus} title={`Nova classificacao de ${sector}`} subtitle="Cadastre uma regra para as proximas analises deste contexto." /><input placeholder="valor_chave" value={draft.value} onChange={(event) => setDraft((current) => ({ ...current, value: event.target.value }))} /><input placeholder="Nome da classificacao" value={draft.label} onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))} /><input placeholder="Descricao para orientar a IA" value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /><button onClick={addClassification}><Plus size={16} /> Adicionar</button></article>
+      <article className="panel classification-table"><header><span>Value</span><span>Label</span><span>Descricao</span><span>Ativa</span></header>{items.map((item) => <div key={item.value}><code>{item.value}</code><span><strong>{item.label}</strong><span className="classification-badges">{item.resolved ? <small className="resolved-badge">Resolvido</small> : null}{item.nonScore ? <small>Non-Score</small> : null}</span></span><p>{item.description}</p><button className={`switch ${item.active ? "on" : ""}`} onClick={() => { setItemsBySector((current) => ({ ...current, [sector]: current[sector].map((entry) => entry.value === item.value ? { ...entry, active: !entry.active } : entry) })); onNotify(item.active ? "Classificacao desativada" : "Classificacao ativada", item.label); }} aria-label={`${item.active ? "Desativar" : "Ativar"} ${item.label}`}><span /></button></div>)}</article>
     </section>
   );
 }
@@ -1817,10 +1915,12 @@ function Adherence({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: string
 
 function AlertsCenter({
   alerts,
+  focusAlertId,
   onOpen,
   onNotify,
 }: {
   alerts: AlertItem[];
+  focusAlertId: string | null;
   onOpen: (id: string) => void;
   onNotify: (title: string, body: string) => void;
 }) {
@@ -1828,6 +1928,7 @@ function AlertsCenter({
   const [alertTab, setAlertTab] = useState<"Ativos" | "Vistos" | "Descartados">("Ativos");
   const [severityFilter, setSeverityFilter] = useState("Todas severidades");
   const [ownerFilter, setOwnerFilter] = useState("Todos operadores");
+  const [expandedAlertId, setExpandedAlertId] = useState<string | null>(focusAlertId);
   const updateAlert = (alert: AlertItem, status: AlertStatus) => {
     setStatusById((items) => ({ ...items, [alert.id]: status }));
     fetch("/api/actions", {
@@ -1840,11 +1941,11 @@ function AlertsCenter({
 
   const visibleAlerts = alerts.filter((alert) => {
     const status = statusById[alert.id] ?? alert.status;
-    const matchesTab = alertTab === "Ativos" ? status === "Aberto" : alertTab === "Vistos" ? status === "Reconhecido" : status === "Resolvido";
+    const matchesTab = focusAlertId === alert.id || (alertTab === "Ativos" ? status === "Aberto" : alertTab === "Vistos" ? status === "Reconhecido" : status === "Resolvido");
     const matchesSeverity = severityFilter === "Todas severidades" || alert.severity === severityFilter;
     const matchesOwner = ownerFilter === "Todos operadores" || alert.owner === ownerFilter;
     return matchesTab && matchesSeverity && matchesOwner;
-  });
+  }).sort((a, b) => Number(b.id === focusAlertId) - Number(a.id === focusAlertId));
   const activeCount = alerts.filter((alert) => (statusById[alert.id] ?? alert.status) === "Aberto").length;
   const criticalCount = alerts.filter((alert) => alert.severity === "Critico").length;
   const positiveCount = alerts.filter((alert) => alert.severity === "Baixo").length;
@@ -1871,10 +1972,25 @@ function AlertsCenter({
         <PanelTitle icon={AlertTriangle} title="Central de alertas configuravel" subtitle="Atribuir, comentar, resolver e criar tarefas de coaching." />
         <div className="cards-list alerts-center-list">
         {visibleAlerts.map((alert) => (
-          <div className="case-card alert-case-card" key={alert.id}>
-            <span className="alert-case-main"><strong>{alert.type}</strong><small>{alert.evidence}</small></span>
-            <span className="alert-case-meta"><strong>{alert.severity}</strong><small>{alert.owner} - {alert.due}</small></span>
-            <span className="alert-case-status">{statusById[alert.id] ?? alert.status}</span>
+          <div id={`alert-${alert.id}`} className={`case-card alert-case-card ${focusAlertId === alert.id ? "highlighted" : ""} ${expandedAlertId === alert.id ? "expanded" : ""}`} key={alert.id}>
+            <button className="alert-case-trigger" onClick={() => setExpandedAlertId((current) => current === alert.id ? null : alert.id)} aria-expanded={expandedAlertId === alert.id}>
+              <span className="alert-case-main"><strong>{alert.type}</strong><small>{alert.evidence}</small></span>
+              <span className="alert-case-meta"><strong>{alert.severity}</strong><small>{alert.owner} - {alert.due}</small></span>
+              <span className="alert-case-status">{statusById[alert.id] ?? alert.status}</span>
+              <ChevronRight size={17} />
+            </button>
+            {expandedAlertId === alert.id ? (
+              <div className="alert-detail-line">
+                <div className="alert-timeline">
+                  {["Detectado", "Atribuido", "Reconhecido", "Resolvido"].map((step, index) => {
+                    const status = statusById[alert.id] ?? alert.status;
+                    const reached = index === 0 || index === 1 || status === "Reconhecido" || status === "Resolvido";
+                    return <span className={reached ? "reached" : ""} key={step}><i />{step}<small>{index === 0 ? "Auditor IA" : index === 1 ? alert.owner : index === 2 ? (status !== "Aberto" ? "Registrado" : "Pendente") : (status === "Resolvido" ? "Concluido" : "Pendente")}</small></span>;
+                  })}
+                </div>
+                <p><strong>Evidencia:</strong> {alert.evidence}</p>
+              </div>
+            ) : null}
             <div className="alert-actions">
               <button onClick={() => updateAlert(alert, "Reconhecido")}>Reconhecer</button>
               <button onClick={() => updateAlert(alert, "Resolvido")}>Resolver</button>

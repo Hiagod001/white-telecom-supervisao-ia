@@ -19,6 +19,10 @@
 - Referencia do Agente de IA: `outputs/qa-agent-reference-desktop.png`.
 - Implementacao do Agente de IA: `outputs/qa-agent-local-desktop.png` e `outputs/qa-local-agent-mobile.png`.
 - Comparacao do Agente de IA: `outputs/qa-agent-comparison.png`.
+- Referencia de Reincidencia: `outputs/delipe-reference/recurrence-current.png`.
+- Dashboard contextual: `outputs/qa-dashboard-final.png`.
+- Reincidencia desktop e mobile: `outputs/qa-recurrence-final.png` e `outputs/qa-recurrence-mobile.png`.
+- Comparacao visual de Reincidencia: `outputs/qa-recurrence-comparison.png`.
 
 ## Verificacoes
 
@@ -31,6 +35,10 @@
 - Responsividade: sem rolagem horizontal ou sobreposicao de acoes nas telas verificadas.
 - Console: sem erros ou avisos durante os fluxos principais.
 - Agente de IA: historico, nova conversa, sugestoes, envio por Enter, respostas fundamentadas e limites de dados exercitados no desktop e no mobile.
+- Contextos: Comercial e Atendimento exibem nomenclaturas, indicadores, graficos, rankings e classificacoes diferentes.
+- Reincidencia: agrupamentos por atendimento e por lead abrem o detalhe auditavel da conversa.
+- Alertas: cards do Dashboard navegam para a Central com o alerta destacado e a linha de status expandida.
+- Interacao: menus, cards e linhas possuem estados de hover, clique, selecao e animacao de entrada.
 
 ## Historico de ajustes
 
@@ -40,6 +48,9 @@
 - P2: a documentacao ainda descrevia o projeto inicial. O README foi substituido pela descricao do produto Uai Telecom.
 - P1: a aba Agente de IA era um formulario estatico. Foi reconstruida como chat completo, com historico, compositor fixo e respostas comerciais calculadas sobre o filtro atual.
 - P2: o atalho flutuante da IA sobrepunha o compositor no celular. Ele agora fica oculto apenas dentro da propria aba do agente.
+- P1: o menu Reincidencia estava ausente e os contextos Comercial/Atendimento compartilhavam os mesmos indicadores. O menu e as duas operacoes foram separados.
+- P1: alertas do Dashboard nao aprofundavam a analise. Eles agora abrem o item correspondente com timeline de tratamento.
+- P2: rankings nao reagiam a selecao e o mobile podia ter sobreposicao do atalho flutuante. Os estados interativos e responsivos foram corrigidos.
 
 ## Resultado final
 

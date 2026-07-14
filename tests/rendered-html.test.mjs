@@ -16,6 +16,11 @@ test("Uai Telecom product source includes the requested surfaces", async () => {
   assert.match(page, /Cadastrar novo processo/);
   assert.match(page, /PBX SSH/);
   assert.match(page, /\/api\/admin\/users/);
+  assert.match(page, /Reincidencia/);
+  assert.match(page, /Por atendimento/);
+  assert.match(page, /Leads e vendas por periodo/);
+  assert.match(page, /Como a IA usa as classificacoes de/);
+  assert.match(page, /alert-timeline/);
   assert.match(hosting, /"d1": "DB"/);
 });
 
