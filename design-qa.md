@@ -5,7 +5,7 @@
 - Fonte visual: demo autenticada fornecida pelo cliente.
 - Implementacao: `http://localhost:3000/`.
 - Viewports avaliados: desktop 1440 x 900 e mobile 390 x 844.
-- Estado avaliado: dashboard, alertas ativos e painel individual do operador.
+- Estado avaliado: dashboard, alertas ativos, painel individual do operador, integracoes, processos e transcricao Blip.
 
 ## Evidencias
 
@@ -23,6 +23,8 @@
 - Dashboard contextual: `outputs/qa-dashboard-final.png`.
 - Reincidencia desktop e mobile: `outputs/qa-recurrence-final.png` e `outputs/qa-recurrence-mobile.png`.
 - Comparacao visual de Reincidencia: `outputs/qa-recurrence-comparison.png`.
+- Integracoes Blip desktop e mobile: `outputs/qa-blip-integrations-desktop.png` e `outputs/qa-blip-integrations-mobile.png`.
+- Transcricao Blip em formato de chat: `outputs/qa-blip-chat-desktop.png`.
 
 ## Verificacoes
 
@@ -39,6 +41,10 @@
 - Reincidencia: agrupamentos por atendimento e por lead abrem o detalhe auditavel da conversa.
 - Alertas: cards do Dashboard navegam para a Central com o alerta destacado e a linha de status expandida.
 - Interacao: menus, cards e linhas possuem estados de hover, clique, selecao e animacao de entrada.
+- Blip: teste de conexao, sincronizacao manual, webhook e retorno de credencial ausente foram exercitados sem expor segredos no cliente.
+- Processos: objetivo, instrucoes, canais, etapas dinamicas e documentos compoem o contexto futuro da IA.
+- Transcricao: mensagens de cliente e atendente, eventos, midias, horarios e estados aparecem em ordem cronologica no modelo visual do Blip Desk.
+- Mobile: cards de integracao, editor de processo e chat permanecem sem rolagem horizontal.
 
 ## Historico de ajustes
 
@@ -51,6 +57,10 @@
 - P1: o menu Reincidencia estava ausente e os contextos Comercial/Atendimento compartilhavam os mesmos indicadores. O menu e as duas operacoes foram separados.
 - P1: alertas do Dashboard nao aprofundavam a analise. Eles agora abrem o item correspondente com timeline de tratamento.
 - P2: rankings nao reagiam a selecao e o mobile podia ter sobreposicao do atalho flutuante. Os estados interativos e responsivos foram corrigidos.
+- P1: processos nao aceitavam documentos nem criterios completos para a IA. O editor passou a persistir instrucoes, canais, etapas e anexos em D1/R2.
+- P1: a transcricao era apresentada como campos separados. Ela foi reconstruida como um chat cronologico e alimentado pelas mensagens importadas da Blip.
+- P1: nao havia ingestao real da Blip. Foram adicionados webhook, sincronizacao de atendentes, tickets e historicos, deduplicacao e fila de analise.
+- P2: os estados dos conectores podiam crescer dentro do cabecalho. Os chips agora preservam dimensoes estaveis em desktop e mobile.
 
 ## Resultado final
 

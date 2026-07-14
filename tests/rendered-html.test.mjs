@@ -21,7 +21,11 @@ test("Uai Telecom product source includes the requested surfaces", async () => {
   assert.match(page, /Leads e vendas por periodo/);
   assert.match(page, /Como a IA usa as classificacoes de/);
   assert.match(page, /alert-timeline/);
+  assert.match(page, /Documentos de referencia/);
+  assert.match(page, /chat-message-row/);
+  assert.match(page, /Sincronizar agora/);
   assert.match(hosting, /"d1": "DB"/);
+  assert.match(hosting, /"r2": "PROCESS_FILES"/);
 });
 
 test("build emits API routes and D1 migration", async () => {

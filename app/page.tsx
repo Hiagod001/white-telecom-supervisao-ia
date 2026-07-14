@@ -7,11 +7,13 @@ import {
   Bell,
   Bot,
   CalendarDays,
+  CheckCheck,
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
   Clock3,
   Download,
+  Database,
   Eye,
   FileText,
   Headphones,
@@ -24,7 +26,9 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Paperclip,
   Phone,
+  Play,
   Plus,
   RefreshCw,
   Search,
@@ -34,6 +38,8 @@ import {
   SlidersHorizontal,
   Star,
   Target,
+  Trash2,
+  Upload,
   UserCheck,
   Users,
   X,
@@ -69,7 +75,7 @@ const appConfig = {
 };
 
 type Sector = "Comercial" | "Atendimento" | "Retencao";
-type Channel = "WhatsApp" | "Chatbot" | "Audio" | "Ligacao" | "Multicanal";
+type Channel = "WhatsApp" | "Chatbot" | "Audio" | "Ligacao" | "Multicanal" | "Blip Chat" | "Telegram" | "Messenger" | "Instagram" | "Chat";
 type ReviewStatus = "Pendente" | "Revisado" | "Contestado" | "Atribuido";
 type AlertStatus = "Aberto" | "Reconhecido" | "Resolvido";
 
@@ -101,6 +107,7 @@ type Conversation = {
   firstResponse: number;
   responseTime: number;
   isMultichannelCase: boolean;
+  source?: "Blip" | "Demonstracao";
 };
 
 type AlertItem = {
@@ -140,7 +147,30 @@ type ManagedProcess = {
   sector: Sector;
   status: "Rascunho" | "Em revisao" | "Publicado" | "Arquivado";
   objective: string;
+  instructions: string;
+  channels: Channel[];
   steps: Array<{ name: string; weight: number; criterion: string }>;
+  documents: ManagedProcessDocument[];
+};
+
+type ManagedProcessDocument = {
+  id: number | string;
+  name: string;
+  mimeType: string;
+  size: number;
+  status: string;
+  file?: File;
+};
+
+type TranscriptMessage = {
+  id: string;
+  role: "client" | "attendant" | "system";
+  senderName: string;
+  contentType: string;
+  text: string;
+  mediaUri: string | null;
+  timestamp: string;
+  status: string;
 };
 
 type IntegrationConfig = {
@@ -352,6 +382,19 @@ const pendingDecisions = [
   "Credenciais da Blip, OpenAI e PBX devem ser guardadas como segredo no ambiente de producao.",
 ];
 
+const integrationFieldLabels: Record<string, string> = {
+  contractIdRef: "ID do contrato (variavel BLIP_CONTRACT_ID)",
+  botIdRef: "ID do bot (variavel BLIP_BOT_ID)",
+  authKeyRef: "Chave do bot (variavel BLIP_AUTH_KEY)",
+  webhookSecretRef: "Segredo do webhook (variavel BLIP_WEBHOOK_SECRET)",
+  apiKeyRef: "Chave da OpenAI (variavel OPENAI_API_KEY)",
+  model: "Modelo de analise",
+  host: "Servidor",
+  port: "Porta",
+  username: "Usuario SSH",
+  recordingsPath: "Diretorio das gravacoes",
+};
+
 function pseudoRandom(seed: number) {
   const value = Math.sin(seed * 9301 + 49297) * 233280;
   return value - Math.floor(value);
@@ -530,7 +573,12 @@ const adminNavItems = [
 ];
 
 export default function Home() {
-  const conversations = useMemo(() => generateConversations(), []);
+  const demoConversations = useMemo(() => generateConversations(), []);
+  const [importedConversations, setImportedConversations] = useState<Conversation[]>([]);
+  const conversations = useMemo(
+    () => [...importedConversations, ...demoConversations],
+    [demoConversations, importedConversations],
+  );
   const alerts = useMemo(() => buildAlerts(conversations), [conversations]);
   const [activeView, setActiveView] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -541,7 +589,7 @@ export default function Home() {
   const [channel, setChannel] = useState("Todos");
   const [search, setSearch] = useState("");
   const [onlyEligible, setOnlyEligible] = useState(false);
-  const [selectedId, setSelectedId] = useState(conversations[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState(demoConversations[0]?.id ?? "");
   const [page, setPage] = useState(1);
   const [loadingState, setLoadingState] = useState<"ready" | "loading" | "error" | "empty">("ready");
   const [agentQuestion, setAgentQuestion] = useState("");
@@ -564,15 +612,18 @@ export default function Home() {
       sector: "Atendimento",
       status: "Publicado",
       objective: "Validar se o operador diagnosticou, registrou e confirmou a resolucao do problema.",
+      instructions: "Considere cumprida uma etapa somente quando houver evidencia explicita na conversa.",
+      channels: ["WhatsApp", "Blip Chat", "Ligacao"],
       steps: [
         { name: "Acolhimento", weight: 1, criterion: "Saudacao, empatia e identificacao do cliente." },
         { name: "Confirmacao de resolucao", weight: 2, criterion: "Perguntar se o problema foi resolvido antes de encerrar." },
       ],
+      documents: [],
     },
   ]);
   const [integrationConfigs, setIntegrationConfigs] = useState<IntegrationConfig[]>([
-    { provider: "Blip", status: "Nao configurado", fields: { endpoint: "", botId: "", token: "" } },
-    { provider: "OpenAI", status: "Nao configurado", fields: { model: "gpt-4.1-mini", apiKeyRef: "OPENAI_API_KEY" } },
+    { provider: "Blip", status: "Nao configurado", fields: { contractIdRef: "BLIP_CONTRACT_ID", botIdRef: "BLIP_BOT_ID", authKeyRef: "BLIP_AUTH_KEY", webhookSecretRef: "BLIP_WEBHOOK_SECRET" } },
+    { provider: "OpenAI", status: "Nao configurado", fields: { model: "gpt-5.6-luna", apiKeyRef: "OPENAI_API_KEY" } },
     { provider: "PBX SSH", status: "Nao configurado", fields: { host: "", port: "22", username: "", recordingsPath: "/var/spool/asterisk/monitor" } },
   ]);
 
@@ -586,6 +637,41 @@ export default function Home() {
       if (query) setSearch(query);
       if (nextSector) setSector(nextSector);
     });
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/admin/processes")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Processos persistidos indisponiveis.");
+        return response.json() as Promise<{ processes?: ManagedProcess[] }>;
+      })
+      .then((payload) => {
+        if (payload.processes?.length) setManagedProcesses(payload.processes);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const loadImported = () => {
+      fetch("/api/conversations/imported?limit=100")
+        .then(async (response) => {
+          if (!response.ok) throw new Error("Atendimentos Blip indisponiveis.");
+          return response.json() as Promise<{ conversations?: Array<Omit<Conversation, "start" | "end"> & { start: string; end: string }> }>;
+        })
+        .then((payload) => {
+          const rows = (payload.conversations ?? []).map((conversation) => ({
+            ...conversation,
+            start: new Date(conversation.start),
+            end: new Date(conversation.end),
+            source: "Blip" as const,
+          }));
+          setImportedConversations(rows);
+        })
+        .catch(() => undefined);
+    };
+    loadImported();
+    window.addEventListener("blip-synchronized", loadImported);
+    return () => window.removeEventListener("blip-synchronized", loadImported);
   }, []);
 
   useEffect(() => {
@@ -815,7 +901,7 @@ export default function Home() {
             ))}
           </select>
           <select value={channel} onChange={(event) => setChannel(event.target.value)} aria-label="Canal da operacao">
-            {["Todos", "WhatsApp", "Chatbot", "Audio", "Ligacao", "Multicanal"].map((item) => (
+            {["Todos", "WhatsApp", "Blip Chat", "Chatbot", "Audio", "Ligacao", "Multicanal", "Telegram", "Messenger", "Instagram"].map((item) => (
               <option key={item}>{item}</option>
             ))}
           </select>
@@ -1031,7 +1117,7 @@ export default function Home() {
             </section>
           </div>
         ) : null}
-        {activeView !== "ai" ? (
+        {!['ai', 'detail', 'processes', 'integrations', 'admin'].includes(activeView) ? (
           <>
             <button className="assistant-fab" onClick={() => setAssistantOpen((open) => !open)} title={assistantOpen ? "Fechar Agente de IA" : "Abrir Agente de IA"}>
               {assistantOpen ? <X size={22} /> : <Bot size={22} />}
@@ -1502,29 +1588,96 @@ function ConversationDetail({
 }
 
 function Transcript({ conversation }: { conversation: Conversation }) {
-  const lines = [
-    ["00:02", "Sistema", "Atendimento importado do Blip e relacionado ao protocolo."],
-    ["00:12", "Atendente", `Ola, sou ${conversation.attendant}. Vou te ajudar com esse atendimento.`],
-    ["00:48", "Cliente", conversation.sector === "Comercial" ? "Quero saber se tem internet no meu endereco." : "Minha internet caiu de novo e ja abri chamado antes."],
-    ["02:31", "Atendente", "Vou validar seus dados, consultar o historico e fazer alguns testes."],
-    ["04:16", "Cliente", "Preciso de uma solucao definitiva, nao apenas reiniciar o roteador."],
-    ["08:44", "Atendente", "Registrei a tratativa e o proximo passo. Voce recebera retorno no prazo informado."],
+  const [importedMessages, setImportedMessages] = useState<TranscriptMessage[]>([]);
+  const [loading, setLoading] = useState(conversation.source === "Blip");
+
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (active) setLoading(conversation.source === "Blip");
+    });
+    fetch(`/api/conversations/messages?ticketId=${encodeURIComponent(conversation.id)}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Historico indisponivel.");
+        return response.json() as Promise<{ messages?: TranscriptMessage[] }>;
+      })
+      .then((payload) => {
+        if (active) setImportedMessages(payload.messages ?? []);
+      })
+      .catch(() => {
+        if (active) setImportedMessages([]);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [conversation.id, conversation.source]);
+
+  const timestamp = (minutes: number) => new Date(conversation.start.getTime() + minutes * 60_000).toISOString();
+  const demoMessages: TranscriptMessage[] = [
+    { id: "system-1", role: "system", senderName: "Blip", contentType: "application/vnd.iris.ticket+json", text: "Atendimento encaminhado para a equipe e vinculado ao protocolo.", mediaUri: null, timestamp: timestamp(0), status: "Registrado" },
+    { id: "client-1", role: "client", senderName: conversation.client, contentType: "text/plain", text: conversation.sector === "Comercial" ? "Oi, gostaria de saber se a fibra da Uai atende meu endereco." : "Boa tarde. Minha internet caiu de novo e eu ja tive esse problema esta semana.", mediaUri: null, timestamp: timestamp(1), status: "Recebida" },
+    { id: "agent-1", role: "attendant", senderName: conversation.attendant, contentType: "text/plain", text: `Ola! Eu sou ${conversation.attendant}. Vou consultar seu cadastro e acompanhar o atendimento com voce.`, mediaUri: null, timestamp: timestamp(2), status: "Consumida" },
+    { id: "client-2", role: "client", senderName: conversation.client, contentType: "text/plain", text: conversation.sector === "Comercial" ? "Somos quatro pessoas e usamos bastante para trabalho e streaming." : "As luzes do roteador estao acesas, mas nenhum aparelho consegue navegar.", mediaUri: null, timestamp: timestamp(3), status: "Recebida" },
+    { id: "agent-2", role: "attendant", senderName: conversation.attendant, contentType: "text/plain", text: "Entendi. Vou validar o sinal, o historico do protocolo e fazer alguns testes antes de definir o proximo passo.", mediaUri: null, timestamp: timestamp(5), status: "Consumida" },
+    { id: "client-3", role: "client", senderName: conversation.client, contentType: "audio/ogg", text: "Audio de 00:18", mediaUri: null, timestamp: timestamp(6), status: "Recebida" },
+    { id: "agent-3", role: "attendant", senderName: conversation.attendant, contentType: "text/plain", text: "Registrei a tratativa e o prazo. Antes de encerrar, consegue confirmar se o acesso voltou ao normal?", mediaUri: null, timestamp: timestamp(9), status: "Consumida" },
+    { id: "client-4", role: "client", senderName: conversation.client, contentType: "text/plain", text: "Voltou sim. Vou acompanhar e retorno pelo protocolo se acontecer novamente.", mediaUri: null, timestamp: timestamp(10), status: "Recebida" },
+    { id: "system-2", role: "system", senderName: "Blip", contentType: "application/vnd.iris.ticket+json", text: "Atendimento finalizado pelo atendente.", mediaUri: null, timestamp: timestamp(11), status: "Registrado" },
   ];
+  const messages = importedMessages.length ? importedMessages : demoMessages;
+  const timeLabel = (value: string) => {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(date);
+  };
 
   return (
-    <div className="transcript">
-      <div className="audio-player">
-        <Phone size={18} />
-        <span>Player sincronizado permitido para perfis autorizados</span>
-        <div><i style={{ width: `${conversation.duration * 2}%` }} /></div>
+    <div className="blip-transcript">
+      <header className="chat-contact-bar">
+        <div className="chat-avatar">{conversation.client.slice(0, 1).toUpperCase()}</div>
+        <div>
+          <strong>{conversation.client}</strong>
+          <span>{conversation.channel} - protocolo {conversation.protocol}</span>
+        </div>
+        <span className="chat-source"><Database size={14} /> {conversation.source === "Blip" ? "Sincronizado da Blip" : "Exemplo de transcricao"}</span>
+      </header>
+      <div className="chat-context-strip">
+        <span><UserCheck size={14} /> {conversation.attendant}</span>
+        <span><Clock3 size={14} /> {conversation.duration} min</span>
+        <span><MessageCircle size={14} /> {messages.filter((message) => message.role !== "system").length} mensagens</span>
       </div>
-      {lines.map(([time, actor, text], index) => (
-        <button className={`message ${actor.toLowerCase()}`} key={`${time}-${index}`}>
-          <b>{time}</b>
-          <span>{actor}</span>
-          <p>{text}</p>
-        </button>
-      ))}
+      <div className="chat-thread" aria-live="polite">
+        <div className="chat-day-separator"><span>{formatDate(conversation.start)}</span></div>
+        {loading ? <div className="chat-loading">Carregando historico da Blip...</div> : null}
+        {!loading && messages.map((message) => {
+          if (message.role === "system") {
+            return <div className="chat-system-event" key={message.id}><span>{message.text}</span><time>{timeLabel(message.timestamp)}</time></div>;
+          }
+          const isAudio = message.contentType.includes("audio");
+          const isDocument = /document|file|pdf|word/.test(message.contentType);
+          return (
+            <div className={`chat-message-row ${message.role}`} key={message.id}>
+              <article className="chat-bubble">
+                <strong>{message.role === "attendant" ? message.senderName || conversation.attendant : message.senderName || conversation.client}</strong>
+                {isAudio ? (
+                  <div className="chat-audio"><button className="icon-button" title="Reproduzir audio"><Play size={15} /></button><i><span /></i><small>{message.text}</small></div>
+                ) : isDocument ? (
+                  <div className="chat-document"><Paperclip size={17} /><span>{message.text}</span></div>
+                ) : <p>{message.text}</p>}
+                <footer>
+                  <time>{timeLabel(message.timestamp)}</time>
+                  {message.role === "attendant" ? <CheckCheck size={14} aria-label={message.status} /> : null}
+                </footer>
+              </article>
+            </div>
+          );
+        })}
+      </div>
+      <footer className="chat-readonly-footer">
+        <Lock size={14} /> Historico somente para leitura. Mensagens e midias preservam a ordem recebida da Blip.
+      </footer>
     </div>
   );
 }
@@ -2393,14 +2546,19 @@ function Processes({
   setProcesses: Dispatch<SetStateAction<ManagedProcess[]>>;
   onNotify: (title: string, body: string) => void;
 }) {
+  const availableChannels: Channel[] = ["WhatsApp", "Blip Chat", "Chatbot", "Ligacao", "Audio", "Multicanal"];
   const [draft, setDraft] = useState<ManagedProcess>({
     id: 0,
     name: "",
     sector: "Atendimento",
     status: "Rascunho",
     objective: "",
+    instructions: "",
+    channels: ["WhatsApp", "Blip Chat"],
     steps: [{ name: "", weight: 1, criterion: "" }],
+    documents: [],
   });
+  const [saving, setSaving] = useState(false);
 
   const updateStep = (index: number, key: "name" | "weight" | "criterion", value: string) => {
     setDraft((current) => ({
@@ -2413,27 +2571,84 @@ function Processes({
     }));
   };
 
-  const saveProcess = () => {
+  const addDocuments = (files: FileList | null) => {
+    if (!files?.length) return;
+    const next = Array.from(files)
+      .filter((file) => file.size <= 10 * 1024 * 1024)
+      .map((file) => ({
+        id: crypto.randomUUID(),
+        name: file.name,
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        status: "Pronto para enviar",
+        file,
+      }));
+    setDraft((current) => ({ ...current, documents: [...current.documents, ...next] }));
+    if (next.length !== files.length) {
+      onNotify("Documento ignorado", "Cada arquivo deve ter no maximo 10 MB.");
+    }
+  };
+
+  const saveProcess = async () => {
     if (!draft.name.trim() || !draft.objective.trim()) {
       onNotify("Processo incompleto", "Informe nome e objetivo antes de salvar.");
       return;
     }
-    const created = { ...draft, id: Date.now(), steps: draft.steps.filter((step) => step.name.trim()) };
-    setProcesses((items) => [created, ...items]);
-    fetch("/api/admin/processes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(created),
-    }).catch(() => undefined);
-    onNotify("Processo salvo", `${created.name} foi cadastrado como ${created.status}.`);
-    setDraft({
-      id: 0,
-      name: "",
-      sector: "Atendimento",
-      status: "Rascunho",
-      objective: "",
-      steps: [{ name: "", weight: 1, criterion: "" }],
-    });
+    const steps = draft.steps.filter((step) => step.name.trim() && step.criterion.trim());
+    if (!steps.length) {
+      onNotify("Etapas obrigatorias", "Inclua pelo menos uma etapa com criterio de avaliacao.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await fetch("/api/admin/processes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...draft, steps, documents: undefined }),
+      });
+      const payload = (await response.json()) as { process?: ManagedProcess; error?: string };
+      if (!response.ok || !payload.process) throw new Error(payload.error ?? "Nao foi possivel salvar no banco.");
+
+      const uploadedDocuments: ManagedProcessDocument[] = [];
+      for (const document of draft.documents) {
+        if (!document.file) continue;
+        const form = new FormData();
+        form.set("processId", String(payload.process.id));
+        form.set("file", document.file);
+        const uploadResponse = await fetch("/api/admin/processes/documents", { method: "POST", body: form });
+        const uploadPayload = (await uploadResponse.json()) as { document?: ManagedProcessDocument; error?: string };
+        if (!uploadResponse.ok || !uploadPayload.document) {
+          uploadedDocuments.push({ ...document, status: uploadPayload.error ?? "Falha no envio" });
+        } else {
+          uploadedDocuments.push(uploadPayload.document);
+        }
+      }
+
+      const created: ManagedProcess = {
+        ...draft,
+        ...payload.process,
+        steps,
+        documents: uploadedDocuments,
+      };
+      setProcesses((items) => [created, ...items]);
+      onNotify("Processo salvo", `${created.name} foi cadastrado e ja pode compor o contexto da IA.`);
+      setDraft({
+        id: 0,
+        name: "",
+        sector: "Atendimento",
+        status: "Rascunho",
+        objective: "",
+        instructions: "",
+        channels: ["WhatsApp", "Blip Chat"],
+        steps: [{ name: "", weight: 1, criterion: "" }],
+        documents: [],
+      });
+    } catch (error) {
+      onNotify("Processo nao salvo", error instanceof Error ? error.message : "Falha inesperada ao cadastrar o processo.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -2445,6 +2660,25 @@ function Processes({
           <label>Setor<select value={draft.sector} onChange={(event) => setDraft((current) => ({ ...current, sector: event.target.value as Sector }))}><option>Comercial</option><option>Atendimento</option><option>Retencao</option></select></label>
           <label>Status<select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as ManagedProcess["status"] }))}><option>Rascunho</option><option>Em revisao</option><option>Publicado</option><option>Arquivado</option></select></label>
           <label>Objetivo<textarea value={draft.objective} onChange={(event) => setDraft((current) => ({ ...current, objective: event.target.value }))} placeholder="Descreva o objetivo da avaliacao e quando esse processo deve ser usado." /></label>
+          <label>Orientacoes para a IA<textarea value={draft.instructions} onChange={(event) => setDraft((current) => ({ ...current, instructions: event.target.value }))} placeholder="Explique excecoes, evidencias obrigatorias e o que nunca deve ser inferido." /></label>
+          <fieldset className="channel-selector">
+            <legend>Canais aplicaveis</legend>
+            {availableChannels.map((item) => (
+              <label key={item}>
+                <input
+                  type="checkbox"
+                  checked={draft.channels.includes(item)}
+                  onChange={() => setDraft((current) => ({
+                    ...current,
+                    channels: current.channels.includes(item)
+                      ? current.channels.filter((channel) => channel !== item)
+                      : [...current.channels, item],
+                  }))}
+                />
+                {item}
+              </label>
+            ))}
+          </fieldset>
         </div>
       </article>
       <article className="panel">
@@ -2455,21 +2689,45 @@ function Processes({
               <label>Etapa<input value={step.name} onChange={(event) => updateStep(index, "name", event.target.value)} placeholder="Ex.: Confirmacao de resolucao" /></label>
               <label>Peso<input value={step.weight} onChange={(event) => updateStep(index, "weight", event.target.value)} inputMode="numeric" /></label>
               <label>Criterio<input value={step.criterion} onChange={(event) => updateStep(index, "criterion", event.target.value)} placeholder="Evidencia esperada para cumprir a etapa" /></label>
+              <button className="icon-button remove-step" onClick={() => setDraft((current) => ({ ...current, steps: current.steps.filter((_, stepIndex) => stepIndex !== index) }))} title="Remover etapa"><Trash2 size={16} /></button>
             </div>
           ))}
           <div className="form-actions">
-            <button onClick={() => setDraft((current) => ({ ...current, steps: [...current.steps, { name: "", weight: 1, criterion: "" }] }))}>Adicionar etapa</button>
-            <button onClick={saveProcess}>Salvar processo</button>
+            <button onClick={() => setDraft((current) => ({ ...current, steps: [...current.steps, { name: "", weight: 1, criterion: "" }] }))}><Plus size={16} /> Adicionar etapa</button>
           </div>
+        </div>
+      </article>
+      <article className="panel">
+        <PanelTitle icon={Paperclip} title="Documentos de referencia" subtitle="Anexe roteiros, politicas, tabelas e manuais que ajudam a IA a interpretar o papel deste processo." />
+        <label className="document-dropzone">
+          <Upload size={22} />
+          <strong>Selecionar documentos</strong>
+          <span>TXT, MD, CSV, JSON, PDF ou DOCX, ate 10 MB por arquivo</span>
+          <input type="file" multiple accept=".txt,.md,.csv,.json,.xml,.pdf,.doc,.docx" onChange={(event) => addDocuments(event.target.files)} />
+        </label>
+        {draft.documents.length ? (
+          <div className="document-list">
+            {draft.documents.map((document) => (
+              <div key={document.id}>
+                <FileText size={18} />
+                <span><strong>{document.name}</strong><small>{(document.size / 1024).toFixed(1)} KB - {document.status}</small></span>
+                <button className="icon-button" onClick={() => setDraft((current) => ({ ...current, documents: current.documents.filter((item) => item.id !== document.id) }))} title="Remover documento"><Trash2 size={16} /></button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="process-savebar">
+          <span>{draft.steps.filter((step) => step.name.trim()).length} etapas e {draft.documents.length} documentos preparados</span>
+          <button onClick={saveProcess} disabled={saving}><CheckCircle2 size={16} /> {saving ? "Salvando..." : "Salvar processo"}</button>
         </div>
       </article>
       <article className="panel">
         <PanelTitle icon={FileText} title="Processos cadastrados" subtitle="Clique para reutilizar como base de uma nova versao." />
         <div className="cards-list">
           {processes.map((process) => (
-            <button className="case-card" key={process.id} onClick={() => setDraft({ ...process, id: 0, status: "Rascunho" })}>
+            <button className="case-card" key={process.id} onClick={() => setDraft({ ...process, id: 0, status: "Rascunho", instructions: process.instructions ?? "", channels: process.channels ?? [], documents: process.documents ?? [] })}>
               <span><strong>{process.name}</strong><small>{process.objective}</small></span>
-              <span>{process.sector}<small>{process.steps.length} etapas</small></span>
+              <span>{process.sector}<small>{process.steps.length} etapas - {process.documents.length} documentos</small></span>
               <span className="status cumpriu">{process.status}</span>
             </button>
           ))}
@@ -2512,6 +2770,8 @@ function Integrations({
   setConfigs: Dispatch<SetStateAction<IntegrationConfig[]>>;
   onNotify: (title: string, body: string) => void;
 }) {
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<{ attendants: number; tickets: number; messages: number; analysisQueued: number } | null>(null);
   const updateConfig = (provider: IntegrationConfig["provider"], key: string, value: string) => {
     setConfigs((items) =>
       items.map((item) =>
@@ -2522,24 +2782,89 @@ function Integrations({
     );
   };
 
-  const saveIntegration = (config: IntegrationConfig) => {
-    setConfigs((items) =>
-      items.map((item) =>
-        item.provider === config.provider ? { ...item, status: "Configurado" } : item,
-      ),
-    );
-    fetch("/api/admin/integrations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: config.provider, status: "Configurado", config: config.fields }),
-    }).catch(() => undefined);
-    onNotify("Integracao salva", `${config.provider} foi marcada como configurada.`);
+  const saveIntegration = async (config: IntegrationConfig) => {
+    setBusyAction(`save-${config.provider}`);
+    try {
+      const response = await fetch("/api/admin/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: config.provider, status: "Configurado", config: config.fields }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Nao foi possivel salvar a integracao.");
+      setConfigs((items) => items.map((item) => item.provider === config.provider ? { ...item, status: "Configurado" } : item));
+      onNotify("Integracao salva", `${config.provider} foi cadastrada sem armazenar segredos no navegador.`);
+    } catch (error) {
+      onNotify("Falha ao salvar", error instanceof Error ? error.message : "Falha inesperada.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const testBlip = async () => {
+    setBusyAction("test-Blip");
+    try {
+      const response = await fetch("/api/admin/integrations/blip/test", { method: "POST" });
+      const payload = (await response.json()) as { connected?: boolean; attendants?: number; error?: string };
+      if (!response.ok || !payload.connected) throw new Error(payload.error ?? "Conexao recusada.");
+      setConfigs((items) => items.map((item) => item.provider === "Blip" ? { ...item, status: "Configurado" } : item));
+      onNotify("Blip conectada", `${payload.attendants ?? 0} atendentes encontrados na conta.`);
+    } catch (error) {
+      setConfigs((items) => items.map((item) => item.provider === "Blip" ? { ...item, status: "Erro" } : item));
+      onNotify("Blip nao conectada", error instanceof Error ? error.message : "Falha inesperada.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const syncBlip = async () => {
+    setBusyAction("sync-Blip");
+    try {
+      const response = await fetch("/api/admin/integrations/blip/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 20 }),
+      });
+      const payload = (await response.json()) as { attendants?: number; tickets?: number; messages?: number; analysisQueued?: number; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Sincronizacao recusada.");
+      const result = {
+        attendants: payload.attendants ?? 0,
+        tickets: payload.tickets ?? 0,
+        messages: payload.messages ?? 0,
+        analysisQueued: payload.analysisQueued ?? 0,
+      };
+      setLastSync(result);
+      window.dispatchEvent(new Event("blip-synchronized"));
+      onNotify("Sincronizacao concluida", `${result.tickets} atendimentos e ${result.messages} mensagens importados.`);
+    } catch (error) {
+      onNotify("Falha na sincronizacao", error instanceof Error ? error.message : "Falha inesperada.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const runAnalysis = async () => {
+    setBusyAction("analyze-OpenAI");
+    try {
+      const response = await fetch("/api/admin/analysis/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 3 }),
+      });
+      const payload = (await response.json()) as { analyzed?: number; failures?: unknown[]; error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Analise nao iniciada.");
+      onNotify("Fila de analise processada", payload.message ?? `${payload.analyzed ?? 0} atendimentos analisados; ${payload.failures?.length ?? 0} com pendencia.`);
+    } catch (error) {
+      onNotify("OpenAI ainda indisponivel", error instanceof Error ? error.message : "Configure a chave no ambiente.");
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   return (
     <section className="stack">
       <article className="panel">
-        <PanelTitle icon={Activity} title="Integracoes da supervisao" subtitle="Administrador configura Blip, OpenAI e PBX SSH. Segredos devem ir para variaveis seguras no deploy real." />
+        <PanelTitle icon={Activity} title="Integracoes da supervisao" subtitle="Conectores operacionais com credenciais mantidas somente nas variaveis seguras do servidor." />
         <div className="content-grid">
           {configs.map((config) => (
             <article className="integration-card" key={config.provider}>
@@ -2549,25 +2874,38 @@ function Integrations({
               </header>
               {Object.entries(config.fields).map(([key, value]) => (
                 <label key={key}>
-                  {key}
+                  {integrationFieldLabels[key] ?? key}
                   <input
                     value={value}
-                    type={key.toLowerCase().includes("token") || key.toLowerCase().includes("key") ? "password" : "text"}
+                    type="text"
                     onChange={(event) => updateConfig(config.provider, key, event.target.value)}
                     placeholder={key === "host" ? "10.0.0.15" : key}
+                    readOnly={key.toLowerCase().endsWith("ref")}
                   />
                 </label>
               ))}
               <div className="form-actions">
-                <button onClick={() => saveIntegration(config)}>Salvar</button>
-                <button onClick={() => onNotify("Teste iniciado", `${config.provider}: teste de conectividade simulado executado.`)}>Testar</button>
+                <button onClick={() => saveIntegration(config)} disabled={Boolean(busyAction)}><CheckCircle2 size={16} /> {busyAction === `save-${config.provider}` ? "Salvando..." : "Salvar"}</button>
+                {config.provider === "Blip" ? <button onClick={testBlip} disabled={Boolean(busyAction)}><Activity size={16} /> {busyAction === "test-Blip" ? "Testando..." : "Testar conexao"}</button> : null}
+                {config.provider === "Blip" ? <button onClick={syncBlip} disabled={Boolean(busyAction)}><RefreshCw size={16} /> {busyAction === "sync-Blip" ? "Sincronizando..." : "Sincronizar agora"}</button> : null}
+                {config.provider === "OpenAI" ? <button onClick={runAnalysis} disabled={Boolean(busyAction)}><Bot size={16} /> {busyAction === "analyze-OpenAI" ? "Analisando..." : "Analisar pendentes"}</button> : null}
+                {config.provider === "PBX SSH" ? <button onClick={() => onNotify("PBX pendente", "O teste real sera liberado quando o acesso SSH estiver configurado no servidor.")}><Activity size={16} /> Testar conexao</button> : null}
               </div>
+              {config.provider === "Blip" ? <small className="integration-note">Webhook: <code>/api/integrations/blip/webhook</code></small> : null}
             </article>
           ))}
         </div>
+        {lastSync ? (
+          <div className="sync-summary">
+            <span><Users size={17} /><strong>{lastSync.attendants}</strong> atendentes</span>
+            <span><MessageCircle size={17} /><strong>{lastSync.tickets}</strong> atendimentos</span>
+            <span><Database size={17} /><strong>{lastSync.messages}</strong> mensagens</span>
+            <span><Bot size={17} /><strong>{lastSync.analysisQueued}</strong> na fila de IA</span>
+          </div>
+        ) : null}
       </article>
       <article className="panel">
-        <PanelTitle icon={ShieldCheck} title="Como a ingestao vai funcionar" subtitle="Fluxo previsto para substituir os adaptadores simulados." />
+        <PanelTitle icon={ShieldCheck} title="Como a ingestao funciona" subtitle="Fluxo implementado para substituir os dados demonstrativos pelas fontes reais." />
         <div className="summary-grid">
           <div className="info-card">
             <h3>Blip</h3>
@@ -2575,7 +2913,7 @@ function Integrations({
           </div>
           <div className="info-card">
             <h3>OpenAI</h3>
-            <p>Executa transcricao, classificacao e avaliacao por schema. A chave fica no ambiente seguro, nao no front-end.</p>
+            <p>Classifica e avalia por schema usando a conversa, os processos aplicaveis e seus documentos. A chave fica no ambiente seguro.</p>
           </div>
           <div className="info-card">
             <h3>PBX SSH</h3>

@@ -4,10 +4,31 @@ import { integrations } from "../../../../db/schema";
 
 function routeError(error: unknown) {
   const message = error instanceof Error ? error.message : "Unexpected error";
-  if (message.includes("no such table")) {
+  const cause = error && typeof error === "object" && "cause" in error
+    ? (error as { cause?: { message?: string } }).cause?.message ?? ""
+    : "";
+  if (`${message} ${cause}`.includes("no such table")) {
     return "Banco D1 ainda nao esta migrado. Gere e publique as migracoes antes de salvar integracoes.";
   }
   return message;
+}
+
+function safeConfig(config: Record<string, string>) {
+  const blocked = /token|secret|password|api.?key|auth.?key/i;
+  return Object.fromEntries(
+    Object.entries(config).map(([key, value]) => [
+      key,
+      blocked.test(key) && !key.toLowerCase().endsWith("ref") ? "CONFIGURAR_NO_AMBIENTE" : value,
+    ]),
+  );
+}
+
+function safeConfigJson(configJson: string) {
+  try {
+    return JSON.stringify(safeConfig(JSON.parse(configJson) as Record<string, string>));
+  } catch {
+    return "{}";
+  }
 }
 
 export async function GET() {
@@ -19,7 +40,9 @@ export async function GET() {
       .orderBy(desc(integrations.id))
       .limit(50);
 
-    return Response.json({ integrations: rows });
+    return Response.json({
+      integrations: rows.map((row) => ({ ...row, configJson: safeConfigJson(row.configJson) })),
+    });
   } catch (error) {
     return Response.json({ error: routeError(error) }, { status: 500 });
   }
@@ -44,7 +67,7 @@ export async function POST(request: Request) {
       .values({
         provider,
         status: payload.status ?? "Configurado",
-        configJson: JSON.stringify(payload.config ?? {}),
+        configJson: JSON.stringify(safeConfig(payload.config ?? {})),
       })
       .returning();
 
