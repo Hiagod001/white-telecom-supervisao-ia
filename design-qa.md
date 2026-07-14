@@ -16,6 +16,9 @@
 - Implementacao de alertas: `outputs/qa-local-alerts.png`.
 - Comparacao focada: `outputs/qa-alerts-comparison.png`.
 - Implementacao mobile: `outputs/uai-dashboard-mobile.png` e `outputs/qa-local-alerts-mobile.png`.
+- Referencia do Agente de IA: `outputs/qa-agent-reference-desktop.png`.
+- Implementacao do Agente de IA: `outputs/qa-agent-local-desktop.png` e `outputs/qa-local-agent-mobile.png`.
+- Comparacao do Agente de IA: `outputs/qa-agent-comparison.png`.
 
 ## Verificacoes
 
@@ -27,6 +30,7 @@
 - Operador: resumo individual, feedback, contestacao, revisao e abertura de TC estao funcionais.
 - Responsividade: sem rolagem horizontal ou sobreposicao de acoes nas telas verificadas.
 - Console: sem erros ou avisos durante os fluxos principais.
+- Agente de IA: historico, nova conversa, sugestoes, envio por Enter, respostas fundamentadas e limites de dados exercitados no desktop e no mobile.
 
 ## Historico de ajustes
 
@@ -34,6 +38,8 @@
 - P1: os botoes de alerta se sobrepunham em larguras menores. O grid e a quebra responsiva foram corrigidos.
 - P2: o dashboard apresentava quatro metricas por linha e cores desconectadas da marca. Foi ajustado para seis indicadores e paleta vermelho/neutro.
 - P2: a documentacao ainda descrevia o projeto inicial. O README foi substituido pela descricao do produto Uai Telecom.
+- P1: a aba Agente de IA era um formulario estatico. Foi reconstruida como chat completo, com historico, compositor fixo e respostas comerciais calculadas sobre o filtro atual.
+- P2: o atalho flutuante da IA sobrepunha o compositor no celular. Ele agora fica oculto apenas dentro da propria aba do agente.
 
 ## Resultado final
 

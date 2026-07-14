@@ -155,6 +155,30 @@ type ActionToast = {
   body: string;
 };
 
+type AgentRankingRow = {
+  name: string;
+  team: string;
+  volume: number;
+  score: number;
+  adherence: number;
+  trend: string;
+};
+
+type AgentMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  facts?: string[];
+  sources?: string[];
+};
+
+type AgentThread = {
+  id: string;
+  title: string;
+  updatedAt: string;
+  messages: AgentMessage[];
+};
+
 const attendantNames = [
   "Ana Costa",
   "Bruno Lima",
@@ -511,7 +535,7 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState(conversations[0]?.id ?? "");
   const [page, setPage] = useState(1);
   const [loadingState, setLoadingState] = useState<"ready" | "loading" | "error" | "empty">("ready");
-  const [agentQuestion, setAgentQuestion] = useState("Como devo tratar uma objecao de preco na retencao?");
+  const [agentQuestion, setAgentQuestion] = useState("");
   const [toast, setToast] = useState<ActionToast | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -1008,9 +1032,10 @@ export default function Home() {
             {activeView === "alerts" && <AlertsCenter alerts={alerts} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} onNotify={notify} />}
             {activeView === "ai" && (
               <AiAgent
-                question={agentQuestion}
-                setQuestion={setAgentQuestion}
-                selected={selected}
+                rows={filtered}
+                ranking={attendantRanking}
+                alerts={alerts}
+                period={period}
               />
             )}
             {activeView === "processes" && <Processes processes={managedProcesses} setProcesses={setManagedProcesses} onNotify={notify} />}
@@ -1037,21 +1062,25 @@ export default function Home() {
             </section>
           </div>
         ) : null}
-        <button className="assistant-fab" onClick={() => setAssistantOpen((open) => !open)} title={assistantOpen ? "Fechar Agente de IA" : "Abrir Agente de IA"}>
-          {assistantOpen ? <X size={22} /> : <Bot size={22} />}
-        </button>
-        {assistantOpen ? (
-          <aside className="assistant-panel" aria-label="Agente de IA">
-            <header><span><Bot size={19} /></span><div><strong>Agente de IA</strong><small>Uai Assistant</small></div><button className="icon-button" onClick={() => setAssistantOpen(false)} title="Fechar"><X size={17} /></button></header>
-            <div className="assistant-body">
-              <div className="assistant-welcome"><Bot size={28} /><strong>Como posso ajudar?</strong><p>Pergunte sobre operadores, conversoes, alertas ou metricas.</p></div>
-              {["Qual meu melhor operador esta semana?", "Quais sao as principais objecoes?", "Qual a projecao para o proximo mes?", "Tem algum alerta critico?"].map((prompt) => (
-                <button key={prompt} onClick={() => setAgentQuestion(prompt)}>{prompt}</button>
-              ))}
-              {agentQuestion ? <div className="assistant-answer"><strong>{agentQuestion}</strong><p>Encontrei dados relacionados no periodo atual. A integracao OpenAI podera substituir esta resposta demonstrativa mantendo as mesmas fontes e permissoes.</p></div> : null}
-            </div>
-            <footer><input value={agentQuestion} onChange={(event) => setAgentQuestion(event.target.value)} placeholder="Digite sua pergunta..." /><button className="icon-button" onClick={() => notify("Pergunta enviada", "O agente consultou os dados disponiveis.")} title="Enviar"><Send size={17} /></button></footer>
-          </aside>
+        {activeView !== "ai" ? (
+          <>
+            <button className="assistant-fab" onClick={() => setAssistantOpen((open) => !open)} title={assistantOpen ? "Fechar Agente de IA" : "Abrir Agente de IA"}>
+              {assistantOpen ? <X size={22} /> : <Bot size={22} />}
+            </button>
+            {assistantOpen ? (
+              <aside className="assistant-panel" aria-label="Agente de IA">
+                <header><span><Bot size={19} /></span><div><strong>Agente de IA</strong><small>Uai Assistant</small></div><button className="icon-button" onClick={() => setAssistantOpen(false)} title="Fechar"><X size={17} /></button></header>
+                <div className="assistant-body">
+                  <div className="assistant-welcome"><Bot size={28} /><strong>Como posso ajudar?</strong><p>Pergunte sobre operadores, conversoes, alertas ou metricas.</p></div>
+                  {["Qual meu melhor operador esta semana?", "Quais sao as principais objecoes?", "Qual a projecao para o proximo mes?", "Tem algum alerta critico?"].map((prompt) => (
+                    <button key={prompt} onClick={() => setAgentQuestion(prompt)}>{prompt}</button>
+                  ))}
+                  {agentQuestion ? <div className="assistant-answer"><strong>{agentQuestion}</strong><p>Encontrei dados relacionados no periodo atual. A integracao OpenAI podera substituir esta resposta demonstrativa mantendo as mesmas fontes e permissoes.</p></div> : null}
+                </div>
+                <footer><input value={agentQuestion} onChange={(event) => setAgentQuestion(event.target.value)} placeholder="Digite sua pergunta..." /><button className="icon-button" onClick={() => notify("Pergunta enviada", "O agente consultou os dados disponiveis.")} title="Enviar"><Send size={17} /></button></footer>
+              </aside>
+            ) : null}
+          </>
         ) : null}
         {toast ? (
           <div className="toast" role="status">
@@ -1861,45 +1890,380 @@ function AlertsCenter({
   );
 }
 
+function normalizeAgentQuestion(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function buildCommercialAgentAnswer(
+  question: string,
+  rows: Conversation[],
+  ranking: AgentRankingRow[],
+  alerts: AlertItem[],
+  period: string,
+): Omit<AgentMessage, "id" | "role"> {
+  const normalized = normalizeAgentQuestion(question);
+  const commercialRows = rows.filter((row) => row.sector === "Comercial");
+  const eligibleLeads = commercialRows.filter((row) => row.eligible);
+  const sales = commercialRows.filter((row) => row.classification === "Venda concluida");
+  const conversion = (sales.length / Math.max(eligibleLeads.length, 1)) * 100;
+  const averageScore = average(eligibleLeads.map((row) => row.score));
+  const averageAdherence = average(eligibleLeads.map((row) => row.adherence));
+  const criticalCases = commercialRows.filter((row) => row.alerts.length > 0 && row.score < 6);
+  const lowAdherence = commercialRows.filter((row) => row.adherence < 70);
+  const baseSources = [
+    `${commercialRows.length} atendimentos comerciais no filtro ${period.toLowerCase()}`,
+    "Classificacoes e auditorias da base Uai Telecom",
+  ];
+
+  const sellerStats = Array.from(new Set(commercialRows.map((row) => row.attendant)))
+    .map((name) => {
+      const sellerRows = commercialRows.filter((row) => row.attendant === name);
+      const validRows = sellerRows.filter((row) => row.eligible);
+      const sellerSales = sellerRows.filter((row) => row.classification === "Venda concluida").length;
+      return {
+        name,
+        volume: sellerRows.length,
+        sales: sellerSales,
+        conversion: (sellerSales / Math.max(validRows.length, 1)) * 100,
+        score: average(validRows.map((row) => row.score)),
+        adherence: average(validRows.map((row) => row.adherence)),
+      };
+    })
+    .filter((seller) => seller.volume > 0)
+    .sort((a, b) => b.conversion - a.conversion || b.sales - a.sales || b.score - a.score);
+
+  const bestSeller = sellerStats[0];
+  const worstSeller = sellerStats[sellerStats.length - 1];
+  const lossCounts = new Map<string, number>();
+  commercialRows
+    .filter((row) => !["Venda concluida", "Lead potencial em andamento"].includes(row.classification))
+    .forEach((row) => lossCounts.set(row.classification, (lossCounts.get(row.classification) ?? 0) + 1));
+  const topLosses = Array.from(lossCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const timestamps = commercialRows.map((row) => row.start.getTime());
+  const spanDays = timestamps.length
+    ? Math.max(1, Math.ceil((Math.max(...timestamps) - Math.min(...timestamps)) / 86_400_000) + 1)
+    : 1;
+  const projectedSales = Math.round((sales.length / spanDays) * 30);
+
+  const answer = (content: string, facts: string[] = [], sources = baseSources) => ({ content, facts, sources });
+  const protocol = question.toUpperCase().match(/UAI-\d+/)?.[0];
+  if (protocol) {
+    const conversation = rows.find((row) => row.protocol === protocol);
+    if (!conversation) {
+      return answer(
+        `Nao encontrei o protocolo ${protocol} no periodo e nos filtros atuais. Posso procurar novamente quando o filtro for ampliado.`,
+        [],
+        [`Filtro atual: ${period}`],
+      );
+    }
+    return answer(
+      `Encontrei o atendimento ${protocol}. Ele foi conduzido por ${conversation.attendant}, recebeu nota ${conversation.score.toFixed(1)} e teve ${conversation.adherence}% de aderencia. O desfecho registrado foi "${conversation.classification}".`,
+      [
+        `Canal: ${conversation.channel}`,
+        `Duracao: ${conversation.duration} minutos`,
+        `Alertas: ${conversation.alerts.length ? conversation.alerts.join(", ") : "nenhum"}`,
+      ],
+      [`Atendimento ${protocol}`, `Processo ${conversation.processVersion}`],
+    );
+  }
+
+  const namedSeller = sellerStats.find((seller) => normalized.includes(normalizeAgentQuestion(seller.name)));
+  if (namedSeller) {
+    return answer(
+      `${namedSeller.name} realizou ${namedSeller.volume} atendimentos comerciais no periodo, com ${namedSeller.sales} vendas e conversao de ${namedSeller.conversion.toFixed(1)}% entre os leads elegiveis.`,
+      [
+        `Qualidade media: ${namedSeller.score.toFixed(1)}`,
+        `Aderencia ao processo: ${Math.round(namedSeller.adherence)}%`,
+        `Posicao por qualidade geral: ${Math.max(1, ranking.findIndex((row) => row.name === namedSeller.name) + 1)}`,
+      ],
+    );
+  }
+
+  if (/quem (e|voce)|o que voce|como pode ajudar|suas funcoes|o que faz/.test(normalized)) {
+    return answer(
+      "Sou o Agente de IA da Uai Telecom. Analiso os dados reais disponiveis da operacao para ajudar gestores, administradores e operadores a tomar decisoes com mais seguranca. Nao invento informacoes: quando a base nao sustenta uma resposta, eu aviso claramente.",
+      [
+        "Posso resumir vendas, conversao, qualidade e aderencia",
+        "Posso ranquear, comparar e analisar vendedores",
+        "Posso investigar perdas, alertas e conversas especificas",
+        "Posso explicar os modulos e indicadores do sistema",
+      ],
+      ["Permissoes do usuario atual", "Dados sincronizados da operacao"],
+    );
+  }
+
+  if (/melhor|ranking|ranque/.test(normalized) && bestSeller) {
+    return answer(
+      `${bestSeller.name} lidera o comercial no filtro atual. Foram ${bestSeller.sales} vendas em ${bestSeller.volume} atendimentos, com conversao de ${bestSeller.conversion.toFixed(1)}%.`,
+      [
+        `Qualidade media: ${bestSeller.score.toFixed(1)}`,
+        `Aderencia ao processo: ${Math.round(bestSeller.adherence)}%`,
+        `Criterio: conversao, depois volume de vendas e qualidade`,
+      ],
+    );
+  }
+
+  if (/pior|queda|baixo desempenho|precisa de ajuda/.test(normalized) && worstSeller) {
+    return answer(
+      `${worstSeller.name} aparece como o ponto de maior atencao no comercial neste recorte. A conversao esta em ${worstSeller.conversion.toFixed(1)}%, com ${worstSeller.sales} vendas em ${worstSeller.volume} atendimentos.`,
+      [
+        `Qualidade media: ${worstSeller.score.toFixed(1)}`,
+        `Aderencia: ${Math.round(worstSeller.adherence)}%`,
+        "Recomendacao: revisar conversas antes de definir qualquer acao de coaching",
+      ],
+    );
+  }
+
+  if (/compar/.test(normalized) && sellerStats.length >= 2) {
+    const [first, second] = sellerStats;
+    return answer(
+      `${first.name} esta a frente de ${second.name} principalmente em conversao: ${first.conversion.toFixed(1)}% contra ${second.conversion.toFixed(1)}%.`,
+      [
+        `${first.name}: ${first.sales} vendas, nota ${first.score.toFixed(1)}, aderencia ${Math.round(first.adherence)}%`,
+        `${second.name}: ${second.sales} vendas, nota ${second.score.toFixed(1)}, aderencia ${Math.round(second.adherence)}%`,
+      ],
+    );
+  }
+
+  if (/nao fech|perd|motivo|objec/.test(normalized)) {
+    return answer(
+      `Os motivos de perda mais frequentes no periodo sao ${topLosses.map(([name, count]) => `${name.toLowerCase()} (${count})`).join(", ") || "insuficientes para formar um ranking"}.`,
+      [
+        `${sales.length} vendas concluidas`,
+        `${eligibleLeads.length} leads elegiveis considerados na conversao`,
+        "A resposta usa o desfecho classificado, nao uma suposicao sobre a intencao do cliente",
+      ],
+    );
+  }
+
+  if (/roteiro|script|etapa|pulad|aderencia/.test(normalized)) {
+    return answer(
+      `${lowAdherence.length} atendimentos comerciais ficaram abaixo de 70% de aderencia. A base atual permite identificar esses casos, mas ainda nao possui o agregado por etapa necessario para afirmar qual etapa foi a mais pulada sem risco de inventar.`,
+      [
+        `Aderencia media do comercial: ${Math.round(averageAdherence)}%`,
+        "A integracao das auditorias por etapa habilitara o ranking exato",
+      ],
+      [...baseSources, "Processo Comercial publicado"],
+    );
+  }
+
+  if (/previs|projec|receita/.test(normalized)) {
+    return answer(
+      `Mantendo o ritmo observado, a projecao linear e de aproximadamente ${projectedSales} vendas em 30 dias. Nao consigo projetar receita porque o valor dos planos ainda nao esta presente na base.`,
+      [
+        `Ritmo observado: ${sales.length} vendas em ${spanDays} dias cobertos pelo filtro`,
+        "Projecao simples, sem ajuste de sazonalidade",
+      ],
+    );
+  }
+
+  if (/alert|problema|fora do esperado/.test(normalized)) {
+    return answer(
+      `Ha ${criticalCases.length} atendimentos comerciais com alerta e nota abaixo de 6 no periodo. No sistema completo existem ${alerts.length} alertas gerados para os setores visiveis.`,
+      [
+        `${lowAdherence.length} casos comerciais abaixo de 70% de aderencia`,
+        criticalCases[0] ? `Prioridade sugerida: revisar ${criticalCases[0].protocol}` : "Nenhum caso critico comercial no filtro atual",
+      ],
+      [...baseSources, "Central de Alertas"],
+    );
+  }
+
+  if (/desconto|concorrente|o que (falam|disseram)|conversa real/.test(normalized)) {
+    return answer(
+      "Ainda nao consigo confirmar o que foi dito dentro das conversas porque as transcricoes da Blip e do PBX nao estao conectadas. Quando esses dados estiverem disponiveis, a busca sera feita no conteudo real, sem inferir pelo desfecho.",
+      ["Nenhuma transcricao foi usada nesta resposta"],
+      ["Status das integracoes Blip e PBX"],
+    );
+  }
+
+  if (/qualifica|orcamento|decisao|necessidade|urgencia/.test(normalized)) {
+    return answer(
+      "A base atual nao possui os quatro campos de qualificacao separados. Por isso nao vou atribuir uma nota de orcamento, decisao, necessidade ou urgencia sem evidencia. Esse diagnostico sera habilitado quando as conversas reais forem processadas.",
+      [],
+      ["Campos disponiveis na base atual", "Processo Comercial"],
+    );
+  }
+
+  return answer(
+    `No filtro ${period.toLowerCase()}, encontrei ${commercialRows.length} atendimentos comerciais, ${sales.length} vendas e conversao de ${conversion.toFixed(1)}%. A qualidade media esta em ${averageScore.toFixed(1)} e a aderencia em ${Math.round(averageAdherence)}%.`,
+    [
+      bestSeller ? `Destaque atual: ${bestSeller.name}` : "Ainda nao ha vendedor com amostra suficiente",
+      `${criticalCases.length} casos comerciais exigem atencao`,
+      "Voce pode pedir ranking, motivos de perda, comparacao, previsao ou um protocolo especifico",
+    ],
+  );
+}
+
+function createAgentThreads(
+  rows: Conversation[],
+  ranking: AgentRankingRow[],
+  alerts: AlertItem[],
+  period: string,
+): AgentThread[] {
+  return [
+    ["Qual meu melhor vendedor esta semana?", "ha 16 horas"],
+    ["Tem algum alerta critico?", "ontem"],
+    ["Por que os clientes nao fecham?", "ha 2 dias"],
+  ].map(([question, updatedAt], index) => {
+    const response = buildCommercialAgentAnswer(question, rows, ranking, alerts, period);
+    return {
+      id: `seed-${index}`,
+      title: question,
+      updatedAt,
+      messages: [
+        { id: `seed-${index}-user`, role: "user", content: question },
+        { id: `seed-${index}-assistant`, role: "assistant", ...response },
+      ],
+    };
+  });
+}
+
 function AiAgent({
-  question,
-  setQuestion,
-  selected,
+  rows,
+  ranking,
+  alerts,
+  period,
 }: {
-  question: string;
-  setQuestion: (value: string) => void;
-  selected: Conversation;
+  rows: Conversation[];
+  ranking: AgentRankingRow[];
+  alerts: AlertItem[];
+  period: string;
 }) {
+  const [threads, setThreads] = useState<AgentThread[]>(() => createAgentThreads(rows, ranking, alerts, period));
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const activeThread = threads.find((thread) => thread.id === activeThreadId);
+  const suggestions = [
+    "Como esta a operacao comercial este mes?",
+    "Qual e o melhor vendedor?",
+    "Por que os clientes nao fecham?",
+    "Quais alertas exigem atencao?",
+  ];
+
+  const startNewChat = () => {
+    setActiveThreadId(null);
+    setDraft("");
+    setIsThinking(false);
+    setHistoryOpen(false);
+  };
+
+  const submitQuestion = (suggestedQuestion?: string) => {
+    const question = (suggestedQuestion ?? draft).trim();
+    if (!question || isThinking) return;
+    const nextMessageIndex = (activeThread?.messages.length ?? 0) + 1;
+    const threadId = activeThreadId ?? `chat-${threads.length + 1}`;
+    const userMessage: AgentMessage = { id: `${threadId}-user-${nextMessageIndex}`, role: "user", content: question };
+    setThreads((current) => {
+      const exists = current.some((thread) => thread.id === threadId);
+      if (!exists) {
+        return [{ id: threadId, title: question.slice(0, 58), updatedAt: "agora", messages: [userMessage] }, ...current];
+      }
+      return current.map((thread) =>
+        thread.id === threadId
+          ? { ...thread, updatedAt: "agora", messages: [...thread.messages, userMessage] }
+          : thread,
+      );
+    });
+    setActiveThreadId(threadId);
+    setDraft("");
+    setIsThinking(true);
+    setHistoryOpen(false);
+    window.setTimeout(() => {
+      const response = buildCommercialAgentAnswer(question, rows, ranking, alerts, period);
+      const assistantMessage: AgentMessage = {
+        id: `${threadId}-assistant-${nextMessageIndex + 1}`,
+        role: "assistant",
+        ...response,
+      };
+      setThreads((current) => current.map((thread) =>
+        thread.id === threadId ? { ...thread, messages: [...thread.messages, assistantMessage] } : thread,
+      ));
+      setIsThinking(false);
+    }, 650);
+  };
+
   return (
-    <section className="content-grid two-one">
-      <article className="panel">
-        <PanelTitle icon={Bot} title="Agente consultivo interno" subtitle="Usa somente processos, scripts e politicas aprovadas." />
-        <textarea value={question} onChange={(event) => setQuestion(event.target.value)} aria-label="Pergunta ao agente" />
-        <div className="chat-answer">
-          <strong>Resposta com fontes internas</strong>
-          <p>Para objecao de preco, primeiro confirme o motivo principal e o historico do cliente. Se houver instabilidade recorrente, trate a causa tecnica antes de oferecer desconto. Quando houver base suficiente, compare valor percebido, plano atual e necessidade de uso. Nao prometa desconto fora da politica aprovada.</p>
-          <ul>
-            <li>Fonte: Processo Retencao v2.1, etapa &quot;Tratar causa antes do desconto&quot;.</li>
-            <li>Fonte: Script Comercial v1.8, etapa &quot;Tratamento de objecoes&quot;.</li>
-            <li>Contexto anexado: {selected.protocol}, dados pessoais mascarados.</li>
-          </ul>
-          <div className="pill-row">
-            <button>Resposta util</button>
-            <button>Reportar erro</button>
+    <section className="ai-chat-shell">
+      <aside className={`ai-history ${historyOpen ? "mobile-open" : ""}`} aria-label="Historico do agente">
+        <header>
+          <div><strong>Conversas</strong><small>{threads.length} historicos</small></div>
+          <button className="icon-button" onClick={startNewChat} title="Nova conversa"><Plus size={17} /></button>
+        </header>
+        <button className="ai-new-chat" onClick={startNewChat}><Plus size={16} />Nova conversa</button>
+        <div className="ai-thread-list">
+          {threads.map((thread) => (
+            <button
+              className={activeThreadId === thread.id ? "active" : ""}
+              key={thread.id}
+              onClick={() => { setActiveThreadId(thread.id); setHistoryOpen(false); }}
+            >
+              <span><strong>{thread.title}</strong><small>{thread.updatedAt}</small></span>
+              <em>{thread.messages.length}</em>
+            </button>
+          ))}
+        </div>
+        <footer><ShieldCheck size={17} /><span><strong>Dados protegidos</strong><small>Respostas limitadas as fontes permitidas.</small></span></footer>
+      </aside>
+
+      <div className="ai-chat-main">
+        <header className="ai-chat-toolbar">
+          <button className="icon-button ai-history-toggle" onClick={() => setHistoryOpen((open) => !open)} title="Abrir conversas"><PanelLeftOpen size={18} /></button>
+          <div><strong>Uai Sales AI</strong><small>Analise comercial baseada nos dados do filtro atual</small></div>
+          <span className="ai-data-status"><span />Base demonstrativa</span>
+          {activeThread ? <button onClick={startNewChat}><Plus size={15} />Novo chat</button> : null}
+        </header>
+
+        {activeThread ? (
+          <div className="ai-messages" aria-live="polite">
+            {activeThread.messages.map((message) => (
+              <article className={`ai-message ${message.role}`} key={message.id}>
+                {message.role === "assistant" ? <span className="ai-avatar"><Bot size={17} /></span> : null}
+                <div className="ai-message-bubble">
+                  <strong>{message.role === "assistant" ? "Uai Sales AI" : "Voce"}</strong>
+                  {message.content.split("\n\n").map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                  {message.facts?.length ? <ul>{message.facts.map((fact) => <li key={fact}>{fact}</li>)}</ul> : null}
+                  {message.sources?.length ? <div className="ai-sources"><small>Fontes consultadas</small>{message.sources.map((source) => <span key={source}>{source}</span>)}</div> : null}
+                </div>
+              </article>
+            ))}
+            {isThinking ? <article className="ai-message assistant"><span className="ai-avatar"><Bot size={17} /></span><div className="ai-thinking"><i /><i /><i /><span>Analisando dados disponiveis</span></div></article> : null}
           </div>
-        </div>
-      </article>
-      <article className="panel">
-        <PanelTitle icon={ShieldCheck} title="Limites da IA" subtitle="Defesas contra invencao e prompt injection." />
-        <div className="info-card wide">
-          <h3>Sem base suficiente</h3>
-          <p>Quando a pergunta exige politica nao cadastrada, o agente deve dizer que nao ha base aprovada e orientar consulta humana.</p>
-        </div>
-        <div className="info-card wide">
-          <h3>Assistencia em tempo real</h3>
-          <p>Marcada como possibilidade futura condicionada a APIs, latencia, precisao e avaliacao humana.</p>
-        </div>
-      </article>
+        ) : (
+          <div className="ai-empty-state">
+            <span><Bot size={30} /></span>
+            <h3>Como posso ajudar?</h3>
+            <p>Pergunte sobre vendas, conversao, vendedores, perdas, aderencia, previsoes, alertas ou qualquer indicador do sistema.</p>
+            <div className="ai-suggestion-grid">
+              {suggestions.map((suggestion) => <button key={suggestion} onClick={() => submitQuestion(suggestion)}>{suggestion}</button>)}
+            </div>
+          </div>
+        )}
+
+        <footer className="ai-composer">
+          <div>
+            <textarea
+              aria-label="Digite sua pergunta"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  submitQuestion();
+                }
+              }}
+              placeholder="Digite sua pergunta..."
+              rows={2}
+            />
+            <button className="icon-button" onClick={() => submitQuestion()} disabled={!draft.trim() || isThinking} title="Enviar pergunta"><Send size={18} /></button>
+          </div>
+          <small>Enter para enviar, Shift + Enter para quebra de linha. O agente nao inventa dados ausentes.</small>
+        </footer>
+      </div>
     </section>
   );
 }
