@@ -6,6 +6,7 @@ import {
   BarChart3,
   Bell,
   Bot,
+  Building2,
   CalendarDays,
   CheckCheck,
   CheckCircle2,
@@ -21,9 +22,8 @@ import {
   LineChart,
   Lock,
   MessageCircle,
-  Languages,
   LogOut,
-  Menu,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
@@ -37,10 +37,12 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Star,
+  Sun,
   Target,
   Trash2,
   Upload,
   UserCheck,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -64,7 +66,7 @@ import type { CSSProperties, Dispatch, SetStateAction } from "react";
 const appConfig = {
   productName: "Uai Telecom",
   logoText: "U",
-  company: "Supervisao IA",
+  company: "Supervisão IA",
   colors: {
     accent: "#ef2b2d",
     success: "#ffffff",
@@ -139,6 +141,16 @@ type ManagedUser = {
   role: UserRole;
   team: string;
   status: "Ativo" | "Bloqueado";
+};
+
+type ManagedAttendant = {
+  id: number;
+  identity: string;
+  fullName: string;
+  email: string;
+  team: string;
+  status: string;
+  source: "Blip" | "Manual";
 };
 
 type ManagedProcess = {
@@ -383,17 +395,47 @@ const pendingDecisions = [
 ];
 
 const integrationFieldLabels: Record<string, string> = {
-  contractIdRef: "ID do contrato (variavel BLIP_CONTRACT_ID)",
-  botIdRef: "ID do bot (variavel BLIP_BOT_ID)",
-  authKeyRef: "Chave do bot (variavel BLIP_AUTH_KEY)",
-  webhookSecretRef: "Segredo do webhook (variavel BLIP_WEBHOOK_SECRET)",
-  apiKeyRef: "Chave da OpenAI (variavel OPENAI_API_KEY)",
-  model: "Modelo de analise",
+  contractIdRef: "ID do contrato (variável BLIP_CONTRACT_ID)",
+  botIdRef: "ID do bot (variável BLIP_BOT_ID)",
+  authKeyRef: "Chave do bot (variável BLIP_AUTH_KEY)",
+  webhookSecretRef: "Segredo do webhook (variável BLIP_WEBHOOK_SECRET)",
+  apiKeyRef: "Chave da OpenAI (variável OPENAI_API_KEY)",
+  model: "Modelo de análise",
   host: "Servidor",
   port: "Porta",
-  username: "Usuario SSH",
-  recordingsPath: "Diretorio das gravacoes",
+  username: "Usuário SSH",
+  recordingsPath: "Diretório das gravações",
 };
+
+const ptLabels: Record<string, string> = {
+  Retencao: "Retenção",
+  Ligacao: "Ligação",
+  Demonstracao: "Demonstração",
+  Critico: "Crítico",
+  Medio: "Médio",
+  Atencao: "Atenção",
+  "Nao resolvido": "Não resolvido",
+  "Nao configurado": "Não configurado",
+  "Em revisao": "Em revisão",
+  "Nao cumpriu": "Não cumpriu",
+  "Nao aplicavel": "Não aplicável",
+  Elegivel: "Elegível",
+  "Elegivel para avaliacao": "Elegível para avaliação",
+  "Orientacao de upgrade": "Orientação de upgrade",
+  "Etapa com baixa aderencia": "Etapa com baixa aderência",
+  "Baixa confianca da IA": "Baixa confiança da IA",
+  "Venda concluida": "Venda concluída",
+  "Alta reincidencia": "Alta reincidência",
+  Inelegivel: "Inelegível",
+  Amanha: "Amanhã",
+  Atribuido: "Atribuído",
+  "Mes atual": "Mês atual",
+  "Periodo customizado": "Período customizado",
+};
+
+function ptLabel(value: string) {
+  return ptLabels[value] ?? value;
+}
 
 function pseudoRandom(seed: number) {
   const value = Math.sin(seed * 9301 + 49297) * 233280;
@@ -410,10 +452,7 @@ function generateConversations(): Conversation[] {
 
   for (let index = 0; index < 1000; index += 1) {
     const sector = pick<Sector>(["Comercial", "Atendimento", "Retencao"], index + 2);
-    const channel = pick<Channel>(
-      ["WhatsApp", "Chatbot", "Audio", "Ligacao", "Multicanal"],
-      index + 7,
-    );
+    const channel = pick<Channel>(["WhatsApp", "Blip Chat", "Ligacao"], index + 7);
     const attendant = attendantNames[index % attendantNames.length];
     const team =
       sector === "Comercial"
@@ -501,7 +540,7 @@ function generateConversations(): Conversation[] {
       process: `Processo ${sector}`,
       firstResponse: 1 + Math.floor(pseudoRandom(index + 47) * 18),
       responseTime: 3 + Math.floor(pseudoRandom(index + 53) * 28),
-      isMultichannelCase: channel === "Multicanal" || index % 57 === 0,
+      isMultichannelCase: channel === "WhatsApp" || channel === "Blip Chat",
     });
   }
 
@@ -537,7 +576,7 @@ function buildAlerts(conversations: Conversation[]): AlertItem[] {
     .slice(0, 32)
     .map((conversation, index) => ({
       id: `alert-${index + 1}`,
-      type: conversation.alerts[0],
+      type: ptLabel(conversation.alerts[0]),
       severity:
         conversation.score < 4.8 || conversation.recurrences >= 5
           ? "Critico"
@@ -549,7 +588,7 @@ function buildAlerts(conversations: Conversation[]): AlertItem[] {
       owner: index % 3 === 0 ? "Gestor Suporte" : index % 3 === 1 ? "Qualidade" : "Comercial",
       due: index % 2 === 0 ? "Hoje" : "Amanha",
       status: index % 5 === 0 ? "Resolvido" : index % 3 === 0 ? "Reconhecido" : "Aberto",
-      evidence: `${conversation.protocol}: ${conversation.alerts.join(", ")}`,
+      evidence: `${conversation.protocol}: ${conversation.alerts.map(ptLabel).join(", ")}`,
       conversationId: conversation.id,
     }));
 }
@@ -559,31 +598,42 @@ const navItems = [
   { id: "conversations", label: "Conversas", icon: MessageCircle, count: 0 },
   { id: "agents", label: "Atendentes", icon: Users, count: 0 },
   { id: "kpis", label: "KPIs", icon: BarChart3, count: 0 },
-  { id: "adherence", label: "Aderencia ao Script", icon: ClipboardCheck, count: 0 },
-  { id: "recurrence", label: "Reincidencia", icon: RefreshCw, count: 0 },
+  { id: "adherence", label: "Aderência ao Script", icon: ClipboardCheck, count: 0 },
+  { id: "recurrence", label: "Reincidência", icon: RefreshCw, count: 0 },
   { id: "ai", label: "Agente de IA", icon: Bot, count: 0 },
   { id: "processes", label: "Processos", icon: FileText, count: 0 },
-  { id: "classifications", label: "Classificacoes", icon: Target, count: 0 },
+  { id: "classifications", label: "Classificações", icon: Target, count: 0 },
   { id: "alerts", label: "Alertas", icon: Bell, count: 0 },
 ];
 
 const adminNavItems = [
-  { id: "integrations", label: "Integracoes", icon: Activity, count: 0 },
-  { id: "admin", label: "Administracao", icon: Settings, count: 0 },
+  { id: "integrations", label: "Integrações", icon: Activity, count: 0 },
+  { id: "admin", label: "Administração", icon: Settings, count: 0 },
+];
+
+const operatorNavItems = [
+  { id: "operator", label: "Meu painel", icon: UserCheck, count: 0 },
+  { id: "conversations", label: "Meus atendimentos", icon: MessageCircle, count: 0 },
+  { id: "ai", label: "Agente de IA", icon: Bot, count: 0 },
 ];
 
 export default function Home() {
   const demoConversations = useMemo(() => generateConversations(), []);
   const [importedConversations, setImportedConversations] = useState<Conversation[]>([]);
+  const [reviewOverrides, setReviewOverrides] = useState<Record<string, ReviewStatus>>({});
   const conversations = useMemo(
-    () => [...importedConversations, ...demoConversations],
-    [demoConversations, importedConversations],
+    () => [...importedConversations, ...demoConversations].map((conversation) => ({
+      ...conversation,
+      reviewStatus: reviewOverrides[conversation.id] ?? conversation.reviewStatus,
+    })),
+    [demoConversations, importedConversations, reviewOverrides],
   );
   const alerts = useMemo(() => buildAlerts(conversations), [conversations]);
   const [activeView, setActiveView] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>("Gestor");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [period, setPeriod] = useState("Mes atual");
   const [sector, setSector] = useState("Atendimento");
   const [channel, setChannel] = useState("Todos");
@@ -598,12 +648,18 @@ export default function Home() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [customPeriodOpen, setCustomPeriodOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [language, setLanguage] = useState<"PT" | "ES">("PT");
+  const [reviewDialogId, setReviewDialogId] = useState<string | null>(null);
+  const [reviewer, setReviewer] = useState("Qualidade");
+  const [reviewAssignmentNote, setReviewAssignmentNote] = useState("");
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([
     { id: 1, name: "Gabriel Coordenador", email: "gestor@uaitelecom.com.br", role: "Gestor", team: "Qualidade", status: "Ativo" },
     { id: 2, name: "Ana Operadora", email: "ana@uaitelecom.com.br", role: "Operador", team: "Suporte N1", status: "Ativo" },
+  ]);
+  const [managedAttendants, setManagedAttendants] = useState<ManagedAttendant[]>([
+    { id: 1, identity: "manual:ana", fullName: "Ana Costa", email: "ana@uaitelecom.com.br", team: "Atendimento", status: "Ativo", source: "Manual" },
+    { id: 2, identity: "manual:bruno", fullName: "Bruno Lima", email: "bruno@uaitelecom.com.br", team: "Comercial", status: "Ativo", source: "Manual" },
   ]);
   const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>([
     {
@@ -611,12 +667,12 @@ export default function Home() {
       name: "Atendimento - Suporte N1",
       sector: "Atendimento",
       status: "Publicado",
-      objective: "Validar se o operador diagnosticou, registrou e confirmou a resolucao do problema.",
-      instructions: "Considere cumprida uma etapa somente quando houver evidencia explicita na conversa.",
+      objective: "Validar se o operador diagnosticou, registrou e confirmou a resolução do problema.",
+      instructions: "Considere cumprida uma etapa somente quando houver evidência explícita na conversa.",
       channels: ["WhatsApp", "Blip Chat", "Ligacao"],
       steps: [
-        { name: "Acolhimento", weight: 1, criterion: "Saudacao, empatia e identificacao do cliente." },
-        { name: "Confirmacao de resolucao", weight: 2, criterion: "Perguntar se o problema foi resolvido antes de encerrar." },
+        { name: "Acolhimento", weight: 1, criterion: "Saudação, empatia e identificação do cliente." },
+        { name: "Confirmação de resolução", weight: 2, criterion: "Perguntar se o problema foi resolvido antes de encerrar." },
       ],
       documents: [],
     },
@@ -638,6 +694,16 @@ export default function Home() {
       if (nextSector) setSector(nextSector);
     });
   }, []);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("uai-theme");
+    const preferredTheme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    queueMicrotask(() => setTheme(savedTheme === "light" || savedTheme === "dark" ? savedTheme : preferredTheme));
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("uai-theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     fetch("/api/admin/processes")
@@ -675,6 +741,23 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const loadAttendants = () => {
+      fetch("/api/admin/attendants")
+        .then(async (response) => {
+          if (!response.ok) throw new Error("Atendentes indisponíveis.");
+          return response.json() as Promise<{ attendants?: ManagedAttendant[] }>;
+        })
+        .then((payload) => {
+          if (payload.attendants?.length) setManagedAttendants(payload.attendants);
+        })
+        .catch(() => undefined);
+    };
+    loadAttendants();
+    window.addEventListener("blip-synchronized", loadAttendants);
+    return () => window.removeEventListener("blip-synchronized", loadAttendants);
+  }, []);
+
+  useEffect(() => {
     const params = new URLSearchParams();
     params.set("view", activeView);
     if (search) params.set("q", search);
@@ -696,6 +779,7 @@ export default function Home() {
       const matchesSector = sector === "Todos" || conversation.sector === sector;
       const matchesChannel = channel === "Todos" || conversation.channel === channel;
       const matchesEligible = !onlyEligible || conversation.eligible;
+      const matchesRole = userRole !== "Operador" || conversation.attendant === "Ana Costa";
       const query = search.toLowerCase().trim();
       const matchesSearch =
         !query ||
@@ -710,9 +794,9 @@ export default function Home() {
           .join(" ")
           .toLowerCase()
           .includes(query);
-      return matchesPeriod && matchesSector && matchesChannel && matchesEligible && matchesSearch;
+      return matchesPeriod && matchesSector && matchesChannel && matchesEligible && matchesRole && matchesSearch;
     });
-  }, [channel, conversations, onlyEligible, period, search, sector]);
+  }, [channel, conversations, onlyEligible, period, search, sector, userRole]);
 
   const selected = filtered.find((conversation) => conversation.id === selectedId) ?? filtered[0] ?? conversations[0];
 
@@ -780,7 +864,7 @@ export default function Home() {
         .slice(0, 5)
         .map((row) => ({
           id: `rec-${row.id}`,
-          title: "Reincidencia alta",
+          title: "Reincidência alta",
           body: `${row.client}: ${row.recurrences} contatos em 14 dias`,
           view: "recurrence",
           targetId: row.id,
@@ -801,6 +885,7 @@ export default function Home() {
   const operationalSector: Sector = sector === "Comercial" ? "Comercial" : sector === "Retencao" ? "Retencao" : "Atendimento";
   const peopleLabel = operationalSector === "Comercial" ? "Vendedores" : "Atendentes";
   const navLabel = (id: string, fallback: string) => id === "agents" ? peopleLabel : fallback;
+  const displayedNavItems = userRole === "Operador" ? operatorNavItems : navItems;
   const navCounts = useMemo(
     () => ({
       conversations: filtered.filter((row) => row.reviewStatus === "Pendente").length,
@@ -825,19 +910,19 @@ export default function Home() {
           ? peopleLabel
           : [...navItems, ...adminNavItems].find((item) => item.id === activeView)?.label ?? "Dashboard";
   const activeSubtitle: Record<string, string> = {
-    overview: operationalSector === "Comercial" ? "Visao geral da performance comercial" : operationalSector === "Retencao" ? "Visao geral da retencao e risco de churn" : "Visao geral da performance de atendimento",
+    overview: operationalSector === "Comercial" ? "Visão geral da performance comercial" : operationalSector === "Retencao" ? "Visão geral da retenção e risco de churn" : "Visão geral da performance de atendimento",
     conversations: "Gerencie e analise conversas de atendimento",
     agents: operationalSector === "Comercial" ? "Acompanhe a performance dos vendedores" : "Acompanhe a performance dos atendentes",
     kpis: "Indicadores de performance da equipe",
-    adherence: "Analise de execucao das etapas dos processos",
+    adherence: "Análise de execução das etapas dos processos",
     recurrence: "Clientes que voltaram ao atendimento - sinal de FCR e risco de churn",
     ai: "Pergunte sobre seus dados, KPIs, alertas e muito mais",
     processes: "Configure os processos que a IA utiliza para avaliar conversas",
-    classifications: "Gerencie as classificacoes usadas pela IA",
+    classifications: "Gerencie as classificações usadas pela IA",
     alerts: "Insights gerados pelo Auditor IA sobre a performance da equipe",
     integrations: "Conecte Blip, OpenAI e o servidor PBX",
-    admin: "Usuarios, perfis e acessos da Uai Telecom",
-    operator: "Seu resumo de atendimentos, feedbacks e pendencias",
+    admin: "Usuários, perfis e acessos da Uai Telecom",
+    operator: "Seu resumo de atendimentos, feedbacks e pendências",
   };
 
   const notify = (title: string, body: string) => {
@@ -851,6 +936,28 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, targetType, targetId, note }),
     }).catch(() => undefined);
+  };
+
+  const changeRole = (nextRole: UserRole) => {
+    setUserRole(nextRole);
+    setUserMenuOpen(false);
+    setSearch("");
+    setOnlyEligible(false);
+    setChannel("Todos");
+    if (nextRole === "Operador") setSector("Atendimento");
+    setActiveView(nextRole === "Operador" ? "operator" : nextRole === "Administrador" ? "admin" : "overview");
+    notify("Perfil alterado", nextRole === "Operador" ? "Mostrando apenas o painel e os atendimentos de Ana Costa." : `Visualização de ${nextRole} ativada.`);
+  };
+
+  const assignReview = () => {
+    if (!reviewDialogId) return;
+    const conversation = conversations.find((item) => item.id === reviewDialogId);
+    const note = reviewAssignmentNote.trim() || `Revisão atribuída para ${reviewer}.`;
+    setReviewOverrides((current) => ({ ...current, [reviewDialogId]: "Atribuido" }));
+    persistAction("assign_review", "conversation", reviewDialogId, `${reviewer}: ${note}`);
+    notify("Revisão atribuída", `${conversation?.protocol ?? "Atendimento"} foi enviado para ${reviewer}.`);
+    setReviewDialogId(null);
+    setReviewAssignmentNote("");
   };
 
   const openNotification = (notification: (typeof notifications)[number]) => {
@@ -885,9 +992,9 @@ export default function Home() {
   };
 
   return (
-    <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`} aria-label="Navegacao principal">
-        <button className="brand" onClick={() => setActiveView("overview")} aria-label="Ir para visao geral">
+    <main className={`app-shell theme-${theme} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`} aria-label="Navegação principal">
+        <button className="brand" onClick={() => setActiveView("overview")} aria-label="Ir para visão geral">
           <span className="brand-mark">{appConfig.logoText}</span>
           <span>
             <strong>{appConfig.productName}</strong>
@@ -895,19 +1002,19 @@ export default function Home() {
           </span>
         </button>
         <div className="sidebar-contexts">
-          <select value={sector} onChange={(event) => { setSector(event.target.value); setPage(1); setSearch(""); setFocusedAlertId(null); }} aria-label="Area da operacao">
+          <select value={sector} onChange={(event) => { setSector(event.target.value); setPage(1); setSearch(""); setFocusedAlertId(null); }} aria-label="Área da operação">
             {["Atendimento", "Comercial", "Retencao", "Todos"].map((item) => (
-              <option key={item}>{item}</option>
+              <option key={item} value={item}>{ptLabel(item)}</option>
             ))}
           </select>
-          <select value={channel} onChange={(event) => setChannel(event.target.value)} aria-label="Canal da operacao">
-            {["Todos", "WhatsApp", "Blip Chat", "Chatbot", "Audio", "Ligacao", "Multicanal", "Telegram", "Messenger", "Instagram"].map((item) => (
-              <option key={item}>{item}</option>
+          <select value={channel} onChange={(event) => setChannel(event.target.value)} aria-label="Canal da operação">
+            {["Todos", "WhatsApp", "Blip Chat", "Ligacao"].map((item) => (
+              <option key={item} value={item}>{ptLabel(item)}</option>
             ))}
           </select>
         </div>
         <nav>
-          {navItems.map((item) => {
+          {displayedNavItems.map((item) => {
             const Icon = item.icon;
             const dynamicCount = navCounts[item.id as keyof typeof navCounts] ?? item.count;
             const label = navLabel(item.id, item.label);
@@ -929,8 +1036,8 @@ export default function Home() {
           })}
         </nav>
         {userRole === "Administrador" ? (
-          <nav className="admin-nav" aria-label="Administracao">
-            <small>ADMINISTRACAO</small>
+          <nav className="admin-nav" aria-label="Administração">
+            <small>ADMINISTRAÇÃO</small>
             {adminNavItems.map((item) => {
               const Icon = item.icon;
               const dynamicCount = navCounts[item.id as keyof typeof navCounts] ?? item.count;
@@ -949,27 +1056,22 @@ export default function Home() {
             {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             <span>{sidebarCollapsed ? "Expandir menu" : "Recolher menu"}</span>
           </button>
-          <button className="sidebar-language" onClick={() => setLanguage((value) => value === "PT" ? "ES" : "PT")} title="Idioma">
-            <Languages size={18} />
-            <span>{language === "PT" ? "Portugues" : "Espanol"}</span>
-            <b>{language}</b>
-          </button>
-          <button className="sidebar-user" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu do usuario">
+          <button className="sidebar-user" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu do usuário">
             <span className="avatar">{userRole === "Operador" ? "OP" : userRole === "Administrador" ? "AD" : "GT"}</span>
             <span><strong>Hiago Nunes</strong><small>{userRole}</small></span>
             <ChevronRight size={16} />
           </button>
           {userMenuOpen ? (
             <div className="popover sidebar-user-popover">
-              <strong>Visualizacao atual</strong>
-              <select value={userRole} onChange={(event) => setUserRole(event.target.value as UserRole)}>
+              <strong>Visualização atual</strong>
+              <select value={userRole} onChange={(event) => changeRole(event.target.value as UserRole)}>
                 <option>Administrador</option>
                 <option>Gestor</option>
                 <option>Operador</option>
               </select>
               <button onClick={() => { setActiveView("operator"); setUserMenuOpen(false); }}>Meu resumo</button>
-              <button onClick={() => { setUserRole("Administrador"); setActiveView("admin"); setUserMenuOpen(false); }}>Administracao</button>
-              <button onClick={() => notify("Sessao encerrada", "O fluxo de saida foi validado. A autenticacao real sera conectada no deploy.")}><LogOut size={16} /> Sair</button>
+              {userRole === "Administrador" ? <button onClick={() => { setActiveView("admin"); setUserMenuOpen(false); }}>Administração</button> : null}
+              <button onClick={() => notify("Sessão encerrada", "O fluxo de saída foi validado. A autenticação real será conectada no deploy.")}><LogOut size={16} /> Sair</button>
             </div>
           ) : null}
         </div>
@@ -977,28 +1079,27 @@ export default function Home() {
 
       <section className="workspace">
         <header className="topbar">
-          <button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu">
-            <Menu size={18} />
+          <button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir navegação">
+            <PanelLeftOpen size={18} />
           </button>
-          <button className="language-control" onClick={() => setLanguage((value) => value === "PT" ? "ES" : "PT")}>
-            <Languages size={16} />
-            {language === "PT" ? "Portugues" : "Espanol"}
+          <button className="icon-button theme-toggle" onClick={() => setTheme((value) => value === "dark" ? "light" : "dark")} title={theme === "dark" ? "Ativar modo claro" : "Ativar modo escuro"} aria-label={theme === "dark" ? "Ativar modo claro" : "Ativar modo escuro"}>
+            {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
           </button>
-          <div className="period-control" role="group" aria-label="Periodo">
+          <div className="period-control" role="group" aria-label="Período">
             {["Hoje", "Semana atual", "Mes atual"].map((item) => (
-              <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>
+              <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{ptLabel(item)}</button>
             ))}
             <button className={customPeriodOpen ? "active custom-period" : "custom-period"} onClick={() => setCustomPeriodOpen(true)}>
-              <CalendarDays size={15} /> Periodo customizado
+              <CalendarDays size={15} /> Período customizado
             </button>
           </div>
-          <button className="icon-button notification-button" aria-label="Notificacoes" onClick={() => setNotificationsOpen((open) => !open)}>
+          <button className="icon-button notification-button" aria-label="Notificações" onClick={() => setNotificationsOpen((open) => !open)}>
             <Bell size={18} />
             {unreadNotifications.length > 0 ? <b>{unreadNotifications.length}</b> : null}
           </button>
           {notificationsOpen ? (
             <div className="popover notifications-popover">
-              <strong>Notificacoes nao vistas</strong>
+              <strong>Notificações não vistas</strong>
               {notifications.slice(0, 12).map((notification) => (
                 <button
                   key={notification.id}
@@ -1016,16 +1117,24 @@ export default function Home() {
         <div className="view-header">
           <div>
             <h1>{activeTitle}</h1>
-            <p>{activeSubtitle[activeView] ?? "Supervisao operacional da Uai Telecom"}</p>
+            <p>{activeSubtitle[activeView] ?? "Supervisão operacional da Uai Telecom"}</p>
           </div>
           <div className="header-actions view-tools">
             <label className="toggle">
               <input
                 type="checkbox"
                 checked={onlyEligible}
-                onChange={(event) => setOnlyEligible(event.target.checked)}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setOnlyEligible(checked);
+                  setPage(1);
+                  notify(
+                    checked ? "Filtro aplicado" : "Filtro removido",
+                    checked ? "Exibindo somente atendimentos elegíveis para avaliação." : "Todos os atendimentos voltaram a ser exibidos.",
+                  );
+                }}
               />
-              Apenas elegiveis
+              Apenas elegíveis
             </label>
             <button className="icon-button" onClick={() => simulateLoading("loading")} title="Atualizar">
               <RefreshCw size={16} />
@@ -1065,7 +1174,10 @@ export default function Home() {
                   setSelectedId(id);
                   setActiveView("detail");
                 }}
-                onAssign={(id) => setSelectedId(id)}
+                onAssign={(id) => {
+                  setSelectedId(id);
+                  setReviewDialogId(id);
+                }}
               />
             )}
             {activeView === "detail" && selected && <ConversationDetail conversation={selected} onNotify={notify} />}
@@ -1103,6 +1215,8 @@ export default function Home() {
                 setUsers={setManagedUsers}
                 configs={integrationConfigs}
                 setConfigs={setIntegrationConfigs}
+                attendants={managedAttendants}
+                setAttendants={setManagedAttendants}
                 onNotify={notify}
               />
             )}
@@ -1110,10 +1224,23 @@ export default function Home() {
         )}
         {customPeriodOpen ? (
           <div className="modal-backdrop" role="presentation" onClick={() => setCustomPeriodOpen(false)}>
-            <section className="date-modal" role="dialog" aria-modal="true" aria-label="Periodo customizado" onClick={(event) => event.stopPropagation()}>
-              <header><div><strong>Periodo customizado</strong><small>Escolha a data inicial e final</small></div><button className="icon-button" onClick={() => setCustomPeriodOpen(false)} title="Fechar"><X size={17} /></button></header>
+            <section className="date-modal" role="dialog" aria-modal="true" aria-label="Período customizado" onClick={(event) => event.stopPropagation()}>
+              <header><div><strong>Período customizado</strong><small>Escolha a data inicial e final</small></div><button className="icon-button" onClick={() => setCustomPeriodOpen(false)} title="Fechar"><X size={17} /></button></header>
               <div className="date-fields"><label>Data inicial<input type="date" defaultValue="2026-07-01" /></label><label>Data final<input type="date" defaultValue="2026-07-13" /></label></div>
-              <div className="form-actions"><button onClick={() => { setPeriod("Periodo customizado"); setCustomPeriodOpen(false); notify("Periodo aplicado", "Os indicadores foram atualizados para 01/07/2026 a 13/07/2026."); }}>Aplicar periodo</button></div>
+              <div className="form-actions"><button onClick={() => { setPeriod("Periodo customizado"); setCustomPeriodOpen(false); notify("Período aplicado", "Os indicadores foram atualizados para 01/07/2026 a 13/07/2026."); }}>Aplicar período</button></div>
+            </section>
+          </div>
+        ) : null}
+        {reviewDialogId ? (
+          <div className="modal-backdrop" role="presentation" onClick={() => setReviewDialogId(null)}>
+            <section className="date-modal action-modal" role="dialog" aria-modal="true" aria-label="Atribuir revisão" onClick={(event) => event.stopPropagation()}>
+              <header>
+                <div><strong>Atribuir revisão</strong><small>Defina o responsável e deixe o contexto necessário.</small></div>
+                <button className="icon-button" onClick={() => setReviewDialogId(null)} title="Fechar"><X size={17} /></button>
+              </header>
+              <label>Responsável<select value={reviewer} onChange={(event) => setReviewer(event.target.value)}><option>Qualidade</option><option>Gestor Suporte</option><option>Comercial</option></select></label>
+              <label>Orientação para a revisão<textarea value={reviewAssignmentNote} onChange={(event) => setReviewAssignmentNote(event.target.value)} placeholder="Ex.: conferir se a confirmação de resolução ocorreu antes do encerramento." /></label>
+              <div className="form-actions"><button onClick={assignReview}><UserCheck size={16} /> Confirmar atribuição</button></div>
             </section>
           </div>
         ) : null}
@@ -1201,28 +1328,28 @@ function Overview({
   const recurrent = rows.filter((row) => row.recurrences >= 3);
   const contextualMetrics = sector === "Comercial"
     ? [
-        { label: "Leads recebidos", value: String(rows.length), detail: "Conversas comerciais no periodo.", formula: "contagem de leads", icon: MessageCircle },
-        { label: "Vendas fechadas", value: String(sales.length), detail: "Classificacao Venda concluida.", formula: "vendas concluidas", icon: Target },
-        { label: "Taxa de conversao", value: percent((sales.length / Math.max(eligible.length, 1)) * 100), detail: "Somente leads elegiveis.", formula: "vendas / leads elegiveis", icon: LineChart },
-        { label: "Nota comercial", value: average(eligible.map((row) => row.score)).toFixed(1), detail: "Qualidade media das abordagens.", formula: "media das notas elegiveis", icon: Star },
-        { label: "Aderencia ao processo", value: percent(average(eligible.map((row) => row.adherence))), detail: "Execucao do roteiro comercial.", formula: "aderencia media", icon: ClipboardCheck },
-        { label: "Alertas comerciais", value: String(alerts.length), detail: "Riscos que exigem revisao.", formula: "alertas abertos", icon: AlertTriangle },
+        { label: "Leads recebidos", value: String(rows.length), detail: "Conversas comerciais no período.", formula: "contagem de leads", icon: MessageCircle },
+        { label: "Vendas fechadas", value: String(sales.length), detail: "Classificação: venda concluída.", formula: "vendas concluídas", icon: Target },
+        { label: "Taxa de conversão", value: percent((sales.length / Math.max(eligible.length, 1)) * 100), detail: "Somente leads elegíveis.", formula: "vendas / leads elegíveis", icon: LineChart },
+        { label: "Nota comercial", value: average(eligible.map((row) => row.score)).toFixed(1), detail: "Qualidade média das abordagens.", formula: "média das notas elegíveis", icon: Star },
+        { label: "Aderência ao processo", value: percent(average(eligible.map((row) => row.adherence))), detail: "Execução do roteiro comercial.", formula: "aderência média", icon: ClipboardCheck },
+        { label: "Alertas comerciais", value: String(alerts.length), detail: "Riscos que exigem revisão.", formula: "alertas abertos", icon: AlertTriangle },
       ]
     : sector === "Retencao"
       ? [
-          { label: "Atendimentos de retencao", value: String(rows.length), detail: "Contatos tratados no periodo.", formula: "contagem de atendimentos", icon: MessageCircle },
+          { label: "Atendimentos de retenção", value: String(rows.length), detail: "Contatos tratados no período.", formula: "contagem de atendimentos", icon: MessageCircle },
           { label: "Clientes retidos", value: String(retained.length), detail: "Desfecho classificado como Retido.", formula: "retidos", icon: UserCheck },
-          { label: "Taxa de retencao", value: percent((retained.length / Math.max(eligible.length, 1)) * 100), detail: "Sobre casos elegiveis.", formula: "retidos / elegiveis", icon: LineChart },
-          { label: "Reincidencias", value: String(recurrent.length), detail: "Clientes com 3 ou mais contatos.", formula: "casos reincidentes", icon: RefreshCw },
-          { label: "Nota media", value: average(eligible.map((row) => row.score)).toFixed(1), detail: "Qualidade da negociacao.", formula: "media das notas", icon: Star },
-          { label: "Alertas de churn", value: String(alerts.length), detail: "Riscos ativos no periodo.", formula: "alertas abertos", icon: AlertTriangle },
+          { label: "Taxa de retenção", value: percent((retained.length / Math.max(eligible.length, 1)) * 100), detail: "Sobre casos elegíveis.", formula: "retidos / elegíveis", icon: LineChart },
+          { label: "Reincidências", value: String(recurrent.length), detail: "Clientes com 3 ou mais contatos.", formula: "casos reincidentes", icon: RefreshCw },
+          { label: "Nota média", value: average(eligible.map((row) => row.score)).toFixed(1), detail: "Qualidade da negociação.", formula: "média das notas", icon: Star },
+          { label: "Alertas de churn", value: String(alerts.length), detail: "Riscos ativos no período.", formula: "alertas abertos", icon: AlertTriangle },
         ]
       : [
-          { label: "Atendimentos recebidos", value: String(rows.length), detail: "Contatos de suporte no periodo.", formula: "contagem de atendimentos", icon: MessageCircle },
-          { label: "Resolvidos", value: String(resolved.length), detail: "Resolvidos com evidencia na conversa.", formula: "desfechos resolvidos", icon: CheckCircle2 },
-          { label: "Taxa de resolucao", value: percent((resolved.length / Math.max(rows.length, 1)) * 100), detail: "Resolucao sobre atendimentos analisados.", formula: "resolvidos / analisados", icon: UserCheck },
-          { label: "Primeira resposta", value: `${Math.round(average(rows.map((row) => row.firstResponse)))} min`, detail: "Tempo ate a primeira resposta humana.", formula: "media da primeira resposta", icon: Clock3 },
-          { label: "Reincidencias", value: String(recurrent.length), detail: "Clientes com 3 ou mais contatos em 14 dias.", formula: "casos reincidentes", icon: RefreshCw },
+          { label: "Atendimentos recebidos", value: String(rows.length), detail: "Contatos de suporte no período.", formula: "contagem de atendimentos", icon: MessageCircle },
+          { label: "Resolvidos", value: String(resolved.length), detail: "Resolvidos com evidência na conversa.", formula: "desfechos resolvidos", icon: CheckCircle2 },
+          { label: "Taxa de resolução", value: percent((resolved.length / Math.max(rows.length, 1)) * 100), detail: "Resolução sobre atendimentos analisados.", formula: "resolvidos / analisados", icon: UserCheck },
+          { label: "Primeira resposta", value: `${Math.round(average(rows.map((row) => row.firstResponse)))} min`, detail: "Tempo até a primeira resposta humana.", formula: "média da primeira resposta", icon: Clock3 },
+          { label: "Reincidências", value: String(recurrent.length), detail: "Clientes com 3 ou mais contatos em 14 dias.", formula: "casos reincidentes", icon: RefreshCw },
           { label: "Alertas de atendimento", value: String(alerts.length), detail: "Riscos operacionais em aberto.", formula: "alertas abertos", icon: AlertTriangle },
         ];
   const contextChart = sector === "Comercial"
@@ -1230,8 +1357,8 @@ function Overview({
     : sector === "Atendimento"
       ? trendData.map((item) => ({ ...item, resultado: Math.min(item.volume, Math.round(item.volume * (item.aderencia / 100))) }))
       : trendData.map((item) => ({ ...item, resultado: Math.max(0, Math.round(item.volume * 0.38)) }));
-  const chartTitle = sector === "Comercial" ? "Leads e vendas por periodo" : sector === "Atendimento" ? "Atendimentos e resolucoes por periodo" : "Retencoes por periodo";
-  const resultLabel = sector === "Comercial" ? "vendas" : sector === "Atendimento" ? "resolucoes" : "retencoes";
+  const chartTitle = sector === "Comercial" ? "Leads e vendas por período" : sector === "Atendimento" ? "Atendimentos e resoluções por período" : "Retenções por período";
+  const resultLabel = sector === "Comercial" ? "vendas" : sector === "Atendimento" ? "resoluções" : "retenções";
   const peopleTitle = sector === "Comercial" ? "Ranking de vendedores" : "Ranking de atendentes";
   const steps = processSteps[sector].map((step, index) => [step.name, Math.max(42, Math.round(86 - step.weight * 8 - index * 5))] as [string, number]);
   return (
@@ -1281,7 +1408,7 @@ function Overview({
                     <Cell key={index} fill={["#ef2b2d", "#d72228", "#b91f24", "#8f2327", "#6f2a2d", "#5f5f5f", "#8b8b8b"][index % 7]} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ background: "#211129", border: "1px solid #513160", color: "#fff" }} />
+                <Tooltip contentStyle={{ background: "#191112", border: "1px solid #5f2b2e", color: "#fff" }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -1333,7 +1460,7 @@ function Overview({
           <div className="alert-list">
             {alerts.slice(0, 6).map((alert) => (
               <button className={`alert-row ${alert.severity.toLowerCase()}`} key={alert.id} onClick={() => onAlertClick(alert.id)}>
-                <span className="alert-severity">{alert.severity}</span>
+                <span className="alert-severity">{ptLabel(alert.severity)}</span>
                 <div className="alert-copy">
                   <strong>{alert.type}</strong>
                   <small>{alert.evidence}</small>
@@ -1380,20 +1507,20 @@ function Conversations({
         <table>
           <thead>
             <tr>
-              <th>Inicio</th>
+              <th>Início</th>
               <th>Protocolo</th>
               <th>Cliente</th>
               <th>Atendente</th>
               <th>Setor</th>
               <th>Canal</th>
-              <th>Classificacao IA</th>
-              <th>Elegivel</th>
+              <th>Classificação IA</th>
+              <th>Elegível</th>
               <th>Nota</th>
-              <th>Aderencia</th>
-              <th>Resolucao</th>
+              <th>Aderência</th>
+              <th>Resolução</th>
               <th>Alertas</th>
-              <th>Revisao</th>
-              <th>Acoes</th>
+              <th>Revisão</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -1406,19 +1533,19 @@ function Conversations({
                   <small>{row.maskedPhone}</small>
                 </td>
                 <td>{row.attendant}<small>{row.team}</small></td>
-                <td>{row.sector}<small>{row.processVersion}</small></td>
+                <td>{ptLabel(row.sector)}<small>{row.processVersion}</small></td>
                 <td><ChannelPill channel={row.channel} /></td>
-                <td>{row.classification}<small>{Math.round(row.confidence * 100)}% confianca</small></td>
-                <td>{row.eligible ? "Sim" : "Nao"}<small>{row.ineligibleReason}</small></td>
+                <td>{ptLabel(row.classification)}<small>{Math.round(row.confidence * 100)}% confiança</small></td>
+                <td>{row.eligible ? "Sim" : "Não"}<small>{ptLabel(row.ineligibleReason)}</small></td>
                 <td><ScoreBadge score={row.score} /></td>
                 <td>{percent(row.adherence)}</td>
-                <td>{row.resolution}</td>
+                <td>{ptLabel(row.resolution)}</td>
                 <td>{row.alerts.length}</td>
-                <td>{row.reviewStatus}</td>
+                <td>{ptLabel(row.reviewStatus)}</td>
                 <td>
                   <div className="row-actions">
                     <button onClick={() => onOpen(row.id)} title="Abrir detalhe"><Eye size={15} /></button>
-                    <button onClick={() => onAssign(row.id)} title="Atribuir revisao"><UserCheck size={15} /></button>
+                    <button className={row.reviewStatus === "Atribuido" ? "assigned" : ""} onClick={() => onAssign(row.id)} title={row.reviewStatus === "Atribuido" ? "Reatribuir revisão" : "Atribuir revisão"} aria-label={`${row.reviewStatus === "Atribuido" ? "Reatribuir" : "Atribuir"} revisão do protocolo ${row.protocol}`}><UserCheck size={15} /></button>
                   </div>
                 </td>
               </tr>
@@ -1427,9 +1554,9 @@ function Conversations({
         </table>
       </div>
       <footer className="pagination">
-        <span>Pagina {page} de {totalPages}</span>
+        <span>Página {page} de {totalPages}</span>
         <button disabled={page === 1} onClick={() => onPage(Math.max(1, page - 1))}>Anterior</button>
-        <button disabled={page === totalPages} onClick={() => onPage(Math.min(totalPages, page + 1))}>Proxima</button>
+        <button disabled={page === totalPages} onClick={() => onPage(Math.min(totalPages, page + 1))}>Próxima</button>
       </footer>
     </section>
   );
@@ -1465,9 +1592,9 @@ function ConversationDetail({
           <p>{conversation.attendant} em {conversation.team} - {formatDate(conversation.start)} - {conversation.duration} min</p>
           <div className="pill-row">
             <span>{conversation.classification}</span>
-            <span>{conversation.eligible ? "Elegivel" : "Inelegivel"}</span>
-            <span>{conversation.resolution}</span>
-            <span>{conversation.sentiment}</span>
+            <span>{conversation.eligible ? "Elegível" : "Inelegível"}</span>
+            <span>{ptLabel(conversation.resolution)}</span>
+            <span>{ptLabel(conversation.sentiment)}</span>
           </div>
         </div>
         <div className="score-meter" style={{ "--score": `${conversation.score * 10}%` } as CSSProperties}>
@@ -1676,7 +1803,7 @@ function Transcript({ conversation }: { conversation: Conversation }) {
         })}
       </div>
       <footer className="chat-readonly-footer">
-        <Lock size={14} /> Historico somente para leitura. Mensagens e midias preservam a ordem recebida da Blip.
+        <Lock size={14} /> Histórico somente para leitura. Mensagens e mídias preservam a ordem recebida da Blip.
       </footer>
     </div>
   );
@@ -1686,9 +1813,9 @@ function Journey({ conversation }: { conversation: Conversation }) {
   return (
     <div className="timeline">
       {[
-        ["D-13", "WhatsApp", "Cliente relatou lentidao e recebeu orientacao inicial."],
-        ["D-08", "Ligacao", "OS aberta apos testes. Visita tecnica pendente."],
-        ["D-03", "Multicanal", "Cliente retornou sem resolucao percebida."],
+        ["D-13", "WhatsApp", "Cliente relatou lentidão e recebeu orientação inicial."],
+        ["D-08", "Ligacao", "OS aberta após testes. Visita técnica pendente."],
+        ["D-03", "WhatsApp", "Cliente retornou sem resolução percebida."],
         ["Hoje", conversation.channel, `Atendimento atual classificado como ${conversation.classification}.`],
       ].map(([date, channel, text]) => (
         <div key={`${date}-${channel}`}>
@@ -1732,16 +1859,16 @@ function SectorView({ sector, rows, onOpen }: { sector: Sector; rows: Conversati
   return (
     <section className="stack">
       <article className="panel">
-        <PanelTitle icon={Target} title={`Operacao de ${sector}`} subtitle="Metas, conversoes e gargalos por processo." />
+        <PanelTitle icon={Target} title={`Operação de ${ptLabel(sector)}`} subtitle="Metas, conversões e gargalos por processo." />
         <div className="metric-grid compact">
-          <MiniStat label="Volume elegivel" value={scoped.filter((row) => row.eligible).length.toString()} />
-          <MiniStat label="Nota media" value={average(scoped.map((row) => row.score)).toFixed(1)} />
-          <MiniStat label="Aderencia" value={percent(average(scoped.map((row) => row.adherence)))} />
+          <MiniStat label="Volume elegível" value={scoped.filter((row) => row.eligible).length.toString()} />
+          <MiniStat label="Nota média" value={average(scoped.map((row) => row.score)).toFixed(1)} />
+          <MiniStat label="Aderência" value={percent(average(scoped.map((row) => row.adherence)))} />
           <MiniStat label="Alertas" value={scoped.reduce((sum, row) => sum + row.alerts.length, 0).toString()} />
         </div>
       </article>
       <article className="panel">
-        <PanelTitle icon={MessageCircle} title="Atendimentos que sustentam os indicadores" subtitle="Abrir qualquer linha leva ao detalhe auditavel." />
+        <PanelTitle icon={MessageCircle} title="Atendimentos que sustentam os indicadores" subtitle="Abrir qualquer linha leva ao detalhe auditável." />
         <div className="cards-list">
           {scoped.map((row) => (
             <button className="case-card" key={row.id} onClick={() => onOpen(row.id)}>
@@ -1767,28 +1894,28 @@ function Recurrence({ rows, sector, onOpen }: { rows: Conversation[]; sector: Se
       <div className="kpi-strip recurrence-stats">
         <MiniStat label="Atendimentos recorrentes" value={String(recurrent.length)} />
         <MiniStat label="Clientes reincidentes" value={String(recurrentClients.length)} />
-        <MiniStat label="Taxa de reincidencia" value={percent((recurrent.length / Math.max(rows.length, 1)) * 100)} />
+        <MiniStat label="Taxa de reincidência" value={percent((recurrent.length / Math.max(rows.length, 1)) * 100)} />
         <MiniStat label="Alto risco" value={String(highRisk.length)} />
       </div>
       <article className="panel recurrence-panel">
         <div className="recurrence-heading">
-          <PanelTitle icon={RefreshCw} title="Atendimentos recorrentes" subtitle={`Contexto ${sector}: clientes que retornaram em ate 14 dias.`} />
-          <div className="segmented-control" role="tablist" aria-label="Agrupamento da reincidencia">
+          <PanelTitle icon={RefreshCw} title="Atendimentos recorrentes" subtitle={`Contexto ${ptLabel(sector)}: clientes que retornaram em até 14 dias.`} />
+          <div className="segmented-control" role="tablist" aria-label="Agrupamento da reincidência">
             <button role="tab" aria-selected={mode === "Atendimento"} className={mode === "Atendimento" ? "active" : ""} onClick={() => setMode("Atendimento")}>Por atendimento</button>
             <button role="tab" aria-selected={mode === "Lead"} className={mode === "Lead" ? "active" : ""} onClick={() => setMode("Lead")}>Por lead</button>
           </div>
         </div>
-        <div className="recurrence-table-head"><span>{mode === "Atendimento" ? "Atendimento" : "Cliente"}</span><span>Historico</span><span>Risco</span><span>Acao</span></div>
+        <div className="recurrence-table-head"><span>{mode === "Atendimento" ? "Atendimento" : "Cliente"}</span><span>Histórico</span><span>Risco</span><span>Ação</span></div>
         <div className="cards-list recurrence-list">
           {visibleRows.map((row) => (
             <button className="recurrence-row" key={`${mode}-${row.id}`} onClick={() => onOpen(row.id)}>
               <span><strong>{mode === "Atendimento" ? row.protocol : row.client}</strong><small>{mode === "Atendimento" ? `${row.client} - ${row.channel}` : `${row.recurrences} contatos em 14 dias`}</small></span>
               <span><strong>{row.resolution}</strong><small>{row.classification}</small></span>
-              <span className={row.recurrences >= 5 || row.score < 5.5 ? "risk high" : "risk"}>{row.recurrences >= 5 || row.score < 5.5 ? "Alto" : "Atencao"}</span>
+              <span className={row.recurrences >= 5 || row.score < 5.5 ? "risk high" : "risk"}>{row.recurrences >= 5 || row.score < 5.5 ? "Alto" : "Atenção"}</span>
               <span className="row-action">Abrir conversa <ChevronRight size={15} /></span>
             </button>
           ))}
-          {!visibleRows.length ? <div className="empty-alerts"><RefreshCw size={22} /><strong>Nenhuma reincidencia no filtro atual</strong><p>Altere o periodo ou o contexto operacional.</p></div> : null}
+          {!visibleRows.length ? <div className="empty-alerts"><RefreshCw size={22} /><strong>Nenhuma reincidência no filtro atual</strong><p>Altere o período ou o contexto operacional.</p></div> : null}
         </div>
       </article>
     </section>
@@ -1821,7 +1948,7 @@ function Agents({ ranking, rows, sector }: { ranking: AgentRankingRow[]; rows: C
         <PanelTitle icon={UserCheck} title={selected?.name ?? (sector === "Comercial" ? "Vendedor" : "Atendente")} subtitle={`Resumo individual do ${personLabel} no periodo selecionado.`} />
         <div className="person-score-row">
           <div><small>Nota consolidada</small><strong>{selected?.score.toFixed(1) ?? "0.0"}</strong><span className="positive">{selected?.trend ?? "0.0"} no periodo</span></div>
-          <MiniStat label="Aderencia" value={percent(selected?.adherence ?? 0)} />
+          <MiniStat label="Aderência" value={percent(selected?.adherence ?? 0)} />
           <MiniStat label={sector === "Comercial" ? "Vendas" : "Resolvidos"} value={String(sector === "Comercial" ? sales : resolved)} />
           <MiniStat label="Volume analisado" value={String(selectedRows.length)} />
         </div>
@@ -1851,23 +1978,23 @@ function Kpis({
   const recurrent = rows.filter((row) => row.recurrences >= 3);
   const cards = sector === "Comercial"
     ? [
-        { label: "Leads elegiveis", value: String(eligible.length), detail: "Base valida para conversao", icon: MessageCircle },
-        { label: "Vendas fechadas", value: String(sales.length), detail: "Desfechos de venda concluida", icon: Target },
-        { label: "Conversao", value: percent((sales.length / Math.max(eligible.length, 1)) * 100), detail: "Vendas sobre leads elegiveis", icon: LineChart },
-        { label: "Aderencia comercial", value: percent(average(eligible.map((row) => row.adherence))), detail: "Execucao do processo de vendas", icon: ClipboardCheck },
+        { label: "Leads elegíveis", value: String(eligible.length), detail: "Base válida para conversão", icon: MessageCircle },
+        { label: "Vendas fechadas", value: String(sales.length), detail: "Desfechos de venda concluída", icon: Target },
+        { label: "Conversão", value: percent((sales.length / Math.max(eligible.length, 1)) * 100), detail: "Vendas sobre leads elegíveis", icon: LineChart },
+        { label: "Aderência comercial", value: percent(average(eligible.map((row) => row.adherence))), detail: "Execução do processo de vendas", icon: ClipboardCheck },
       ]
     : sector === "Retencao"
       ? [
-          { label: "Casos elegiveis", value: String(eligible.length), detail: "Atendimentos avaliaveis", icon: MessageCircle },
+          { label: "Casos elegíveis", value: String(eligible.length), detail: "Atendimentos avaliáveis", icon: MessageCircle },
           { label: "Clientes retidos", value: String(retained.length), detail: "Desfecho Retido", icon: UserCheck },
-          { label: "Taxa de retencao", value: percent((retained.length / Math.max(eligible.length, 1)) * 100), detail: "Retidos sobre elegiveis", icon: LineChart },
-          { label: "Reincidentes", value: String(recurrent.length), detail: "Tres ou mais contatos", icon: RefreshCw },
+          { label: "Taxa de retenção", value: percent((retained.length / Math.max(eligible.length, 1)) * 100), detail: "Retidos sobre elegíveis", icon: LineChart },
+          { label: "Reincidentes", value: String(recurrent.length), detail: "Três ou mais contatos", icon: RefreshCw },
         ]
       : [
           { label: "Atendimentos", value: String(rows.length), detail: "Volume recebido no suporte", icon: MessageCircle },
-          { label: "Resolvidos", value: String(resolved.length), detail: "Resolucao confirmada", icon: CheckCircle2 },
-          { label: "Taxa de resolucao", value: percent((resolved.length / Math.max(rows.length, 1)) * 100), detail: "Resolvidos sobre analisados", icon: UserCheck },
-          { label: "Primeira resposta", value: `${Math.round(average(rows.map((row) => row.firstResponse)))} min`, detail: "Media ate resposta humana", icon: Clock3 },
+          { label: "Resolvidos", value: String(resolved.length), detail: "Resolução confirmada", icon: CheckCircle2 },
+          { label: "Taxa de resolução", value: percent((resolved.length / Math.max(rows.length, 1)) * 100), detail: "Resolvidos sobre analisados", icon: UserCheck },
+          { label: "Primeira resposta", value: `${Math.round(average(rows.map((row) => row.firstResponse)))} min`, detail: "Média até a resposta humana", icon: Clock3 },
         ];
   const buckets = new Map<string, { date: string; volume: number; resultado: number; adherenceTotal: number }>();
   rows.forEach((row) => {
@@ -1880,7 +2007,7 @@ function Kpis({
   });
   const chartData = Array.from(buckets.values()).slice(0, 14).reverse().map((bucket) => ({ ...bucket, aderencia: Math.round(bucket.adherenceTotal / Math.max(bucket.volume, 1)) }));
   const peopleLabel = sector === "Comercial" ? "vendedores" : "atendentes";
-  const outcomeLabel = sector === "Comercial" ? "vendas" : sector === "Retencao" ? "retencoes" : "resolucoes";
+  const outcomeLabel = sector === "Comercial" ? "vendas" : sector === "Retencao" ? "retenções" : "resoluções";
   return (
     <section className="stack">
       <div className="kpi-strip">
@@ -1891,7 +2018,7 @@ function Kpis({
       </div>
       <section className="content-grid two-one">
         <article className="panel chart-panel">
-          <PanelTitle icon={LineChart} title={sector === "Comercial" ? "Funil e conversoes por dia" : sector === "Atendimento" ? "Volume e resolucao por dia" : "Volume e retencoes por dia"} subtitle={`Grafico especifico da operacao de ${sector.toLowerCase()}.`} />
+          <PanelTitle icon={LineChart} title={sector === "Comercial" ? "Funil e conversões por dia" : sector === "Atendimento" ? "Volume e resolução por dia" : "Volume e retenções por dia"} subtitle={`Gráfico específico da operação de ${ptLabel(sector).toLowerCase()}.`} />
           <ResponsiveContainer width="100%" height={310}>
             <ComposedChart data={chartData}>
               <CartesianGrid stroke="#292929" vertical={false} />
@@ -1955,18 +2082,18 @@ function Classifications({ sector, onNotify }: { sector: Sector; onNotify: (titl
   const [draft, setDraft] = useState({ value: "", label: "", description: "" });
 
   const addClassification = () => {
-    if (!draft.value.trim() || !draft.label.trim()) return onNotify("Classificacao incompleta", "Informe valor e nome antes de adicionar.");
+    if (!draft.value.trim() || !draft.label.trim()) return onNotify("Classificação incompleta", "Informe valor e nome antes de adicionar.");
     setItemsBySector((current) => ({ ...current, [sector]: [...current[sector], { ...draft, active: true, nonScore: false, resolved: false }] }));
     setDraft({ value: "", label: "", description: "" });
-    onNotify("Classificacao criada", `A nova classificacao ja esta disponivel em ${sector}.`);
+    onNotify("Classificação criada", `A nova classificação já está disponível em ${ptLabel(sector)}.`);
   };
 
   return (
     <section className="stack">
       <article className="classification-info"><div><strong>Como a IA usa as classificacoes de {sector}?</strong><p>A cada analise, a IA recebe somente as regras ativas deste contexto e escolhe exatamente uma. Desative sem excluir para preservar o historico.</p></div><span><b>Resolvido</b> soma na taxa de resolucao<br /><b>Non-Score</b> fica fora dos KPIs</span></article>
       <div className="kpi-strip classification-stats"><MiniStat label="Total" value={String(items.length)} /><MiniStat label="Ativas" value={String(items.filter((item) => item.active).length)} /><MiniStat label="Resolvidas" value={String(items.filter((item) => item.resolved).length)} /><MiniStat label="Non-Score" value={String(items.filter((item) => item.nonScore).length)} /></div>
-      <article className="panel classification-create"><PanelTitle icon={Plus} title={`Nova classificacao de ${sector}`} subtitle="Cadastre uma regra para as proximas analises deste contexto." /><input placeholder="valor_chave" value={draft.value} onChange={(event) => setDraft((current) => ({ ...current, value: event.target.value }))} /><input placeholder="Nome da classificacao" value={draft.label} onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))} /><input placeholder="Descricao para orientar a IA" value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /><button onClick={addClassification}><Plus size={16} /> Adicionar</button></article>
-      <article className="panel classification-table"><header><span>Value</span><span>Label</span><span>Descricao</span><span>Ativa</span></header>{items.map((item) => <div key={item.value}><code>{item.value}</code><span><strong>{item.label}</strong><span className="classification-badges">{item.resolved ? <small className="resolved-badge">Resolvido</small> : null}{item.nonScore ? <small>Non-Score</small> : null}</span></span><p>{item.description}</p><button className={`switch ${item.active ? "on" : ""}`} onClick={() => { setItemsBySector((current) => ({ ...current, [sector]: current[sector].map((entry) => entry.value === item.value ? { ...entry, active: !entry.active } : entry) })); onNotify(item.active ? "Classificacao desativada" : "Classificacao ativada", item.label); }} aria-label={`${item.active ? "Desativar" : "Ativar"} ${item.label}`}><span /></button></div>)}</article>
+      <article className="panel classification-create"><PanelTitle icon={Plus} title={`Nova classificação de ${ptLabel(sector)}`} subtitle="Cadastre uma regra para as próximas análises deste contexto." /><input placeholder="valor_chave" value={draft.value} onChange={(event) => setDraft((current) => ({ ...current, value: event.target.value }))} /><input placeholder="Nome da classificação" value={draft.label} onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))} /><input placeholder="Descrição para orientar a IA" value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /><button onClick={addClassification}><Plus size={16} /> Adicionar</button></article>
+      <article className="panel classification-table"><header><span>Valor</span><span>Nome</span><span>Descrição</span><span>Ativa</span></header>{items.map((item) => <div key={item.value}><code>{item.value}</code><span><strong>{item.label}</strong><span className="classification-badges">{item.resolved ? <small className="resolved-badge">Resolvido</small> : null}{item.nonScore ? <small>Non-Score</small> : null}</span></span><p>{item.description}</p><button className={`switch ${item.active ? "on" : ""}`} onClick={() => { setItemsBySector((current) => ({ ...current, [sector]: current[sector].map((entry) => entry.value === item.value ? { ...entry, active: !entry.active } : entry) })); onNotify(item.active ? "Classificação desativada" : "Classificação ativada", item.label); }} aria-label={`${item.active ? "Desativar" : "Ativar"} ${item.label}`}><span /></button></div>)}</article>
     </section>
   );
 }
@@ -1979,23 +2106,23 @@ function OperatorPanel({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: st
   return (
     <section className="stack">
       <article className="panel">
-        <PanelTitle icon={UserCheck} title="Resumo do operador" subtitle="Visao individual sem ranking nominal de colegas." />
+        <PanelTitle icon={UserCheck} title="Resumo do operador" subtitle="Visão individual sem ranking nominal de colegas." />
         <div className="metric-grid compact">
           <MiniStat label="Meus atendimentos" value={rows.length.toString()} />
-          <MiniStat label="Elegiveis para nota" value={eligible.length.toString()} />
-          <MiniStat label="Minha nota media" value={average(eligible.map((row) => row.score)).toFixed(1)} />
-          <MiniStat label="Minha aderencia" value={percent(average(eligible.map((row) => row.adherence)))} />
+          <MiniStat label="Elegíveis para nota" value={eligible.length.toString()} />
+          <MiniStat label="Minha nota média" value={average(eligible.map((row) => row.score)).toFixed(1)} />
+          <MiniStat label="Minha aderência" value={percent(average(eligible.map((row) => row.adherence)))} />
         </div>
       </article>
 
       <section className="content-grid two-one">
         <article className="panel">
-          <PanelTitle icon={ClipboardCheck} title="O que fiz bem" subtitle="Evidencias positivas em atendimentos recentes." />
+          <PanelTitle icon={ClipboardCheck} title="O que fiz bem" subtitle="Evidências positivas em atendimentos recentes." />
           <div className="cards-list">
             {goodRows.map((row) => (
               <button className="case-card" key={row.id} onClick={() => onOpen(row.id)}>
                 <span><strong>{row.protocol}</strong><small>{row.classification}</small></span>
-                <span>Boa conducao<small>{row.channel} - {formatDate(row.start)}</small></span>
+                <span>Boa condução<small>{ptLabel(row.channel)} - {formatDate(row.start)}</small></span>
                 <ScoreBadge score={row.score} />
               </button>
             ))}
@@ -2008,7 +2135,7 @@ function OperatorPanel({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: st
             {weakRows.map((row) => (
               <button className="case-card" key={row.id} onClick={() => onOpen(row.id)}>
                 <span><strong>{row.protocol}</strong><small>{row.alerts[0] ?? "Etapa com baixa aderencia"}</small></span>
-                <span>{row.resolution}<small>{row.ineligibleReason}</small></span>
+                <span>{ptLabel(row.resolution)}<small>{row.ineligibleReason}</small></span>
                 <ScoreBadge score={row.score} />
               </button>
             ))}
@@ -2017,19 +2144,19 @@ function OperatorPanel({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: st
       </section>
 
       <article className="panel">
-        <PanelTitle icon={MessageCircle} title="Feedbacks pendentes" subtitle="Cada item aponta volume e evidencia, sem comparacao punitiva." />
+        <PanelTitle icon={MessageCircle} title="Feedbacks pendentes" subtitle="Cada item aponta volume e evidência, sem comparação punitiva." />
         <div className="summary-grid">
           <div className="info-card">
-            <h3>Confirmar resolucao</h3>
-            <p>Em 4 de 11 atendimentos elegiveis, a conversa encerrou sem confirmar se o cliente ficou atendido.</p>
+            <h3>Confirmar resolução</h3>
+            <p>Em 4 de 11 atendimentos elegíveis, a conversa encerrou sem confirmar se o cliente ficou atendido.</p>
           </div>
           <div className="info-card">
-            <h3>Registrar proximo passo</h3>
-            <p>Quando abriu OS, informe prazo e canal de retorno. Evidencia em atendimentos com nota abaixo de 7.</p>
+            <h3>Registrar próximo passo</h3>
+            <p>Quando abriu OS, informe prazo e canal de retorno. Evidência em atendimentos com nota abaixo de 7.</p>
           </div>
           <div className="info-card">
-            <h3>Evolucao</h3>
-            <p>Houve melhora na saudacao e identificacao em relacao ao periodo anterior.</p>
+            <h3>Evolução</h3>
+            <p>Houve melhora na saudação e identificação em relação ao período anterior.</p>
           </div>
         </div>
       </article>
@@ -2082,14 +2209,33 @@ function AlertsCenter({
   const [severityFilter, setSeverityFilter] = useState("Todas severidades");
   const [ownerFilter, setOwnerFilter] = useState("Todos operadores");
   const [expandedAlertId, setExpandedAlertId] = useState<string | null>(focusAlertId);
-  const updateAlert = (alert: AlertItem, status: AlertStatus) => {
+  const [alertAction, setAlertAction] = useState<{ kind: "resolve" | "task"; alert: AlertItem } | null>(null);
+  const [actionNote, setActionNote] = useState("");
+  const [taskOwner, setTaskOwner] = useState("Qualidade");
+  const updateAlert = (alert: AlertItem, status: AlertStatus, note = alert.evidence) => {
     setStatusById((items) => ({ ...items, [alert.id]: status }));
     fetch("/api/actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: `alert_${status}`, targetType: "alert", targetId: alert.id, note: alert.evidence }),
+      body: JSON.stringify({ action: `alert_${status}`, targetType: "alert", targetId: alert.id, note }),
     }).catch(() => undefined);
-    onNotify("Alerta atualizado", `${alert.type} ficou como ${status}.`);
+    onNotify("Alerta atualizado", `${alert.type} ficou como ${ptLabel(status)}.`);
+  };
+
+  const confirmAlertAction = () => {
+    if (!alertAction || !actionNote.trim()) return;
+    if (alertAction.kind === "resolve") {
+      updateAlert(alertAction.alert, "Resolvido", actionNote.trim());
+    } else {
+      fetch("/api/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create_coaching_task", targetType: "alert", targetId: alertAction.alert.id, note: `${taskOwner}: ${actionNote.trim()}` }),
+      }).catch(() => undefined);
+      onNotify("Tarefa criada", `Coaching atribuído para ${taskOwner}.`);
+    }
+    setAlertAction(null);
+    setActionNote("");
   };
 
   const visibleAlerts = alerts.filter((alert) => {
@@ -2108,28 +2254,28 @@ function AlertsCenter({
     <section className="stack alerts-workspace">
       <div className="alert-summary-grid">
         <MiniStat label="Ativos" value={String(activeCount)} />
-        <MiniStat label="Criticos" value={String(criticalCount)} />
+        <MiniStat label="Críticos" value={String(criticalCount)} />
         <MiniStat label="Positivos" value={String(positiveCount)} />
         <MiniStat label="Negativos" value={String(negativeCount)} />
       </div>
       <div className="alerts-filterbar">
         <select aria-label="Origem do alerta"><option>Todas origens</option><option>Auditor IA</option><option>Reincidencia</option><option>Qualidade</option></select>
         <select aria-label="Polaridade"><option>Todas polaridades</option><option>Positiva</option><option>Negativa</option></select>
-        <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)} aria-label="Severidade"><option>Todas severidades</option><option>Critico</option><option>Alto</option><option>Medio</option><option>Baixo</option></select>
+        <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)} aria-label="Severidade"><option>Todas severidades</option><option value="Critico">Crítico</option><option>Alto</option><option value="Medio">Médio</option><option>Baixo</option></select>
         <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} aria-label="Operador"><option>Todos operadores</option><option>Gestor Suporte</option><option>Qualidade</option><option>Comercial</option></select>
       </div>
       <div className="alerts-tabs" role="tablist">
         {(["Ativos", "Vistos", "Descartados"] as const).map((tab) => <button key={tab} role="tab" aria-selected={alertTab === tab} className={alertTab === tab ? "active" : ""} onClick={() => setAlertTab(tab)}>{tab}</button>)}
       </div>
       <article className="panel">
-        <PanelTitle icon={AlertTriangle} title="Central de alertas configuravel" subtitle="Atribuir, comentar, resolver e criar tarefas de coaching." />
+        <PanelTitle icon={AlertTriangle} title="Central de alertas configurável" subtitle="Atribua, comente, resolva e crie tarefas de acompanhamento." />
         <div className="cards-list alerts-center-list">
         {visibleAlerts.map((alert) => (
           <div id={`alert-${alert.id}`} className={`case-card alert-case-card ${focusAlertId === alert.id ? "highlighted" : ""} ${expandedAlertId === alert.id ? "expanded" : ""}`} key={alert.id}>
             <button className="alert-case-trigger" onClick={() => setExpandedAlertId((current) => current === alert.id ? null : alert.id)} aria-expanded={expandedAlertId === alert.id}>
               <span className="alert-case-main"><strong>{alert.type}</strong><small>{alert.evidence}</small></span>
-              <span className="alert-case-meta"><strong>{alert.severity}</strong><small>{alert.owner} - {alert.due}</small></span>
-              <span className="alert-case-status">{statusById[alert.id] ?? alert.status}</span>
+              <span className="alert-case-meta"><strong className={`severity-chip severity-${alert.severity.toLowerCase()}`}>{ptLabel(alert.severity)}</strong><small>{alert.owner} - {ptLabel(alert.due)}</small></span>
+              <span className={`alert-case-status status-${(statusById[alert.id] ?? alert.status).toLowerCase()}`}>{ptLabel(statusById[alert.id] ?? alert.status)}</span>
               <ChevronRight size={17} />
             </button>
             {expandedAlertId === alert.id ? (
@@ -2138,16 +2284,16 @@ function AlertsCenter({
                   {["Detectado", "Atribuido", "Reconhecido", "Resolvido"].map((step, index) => {
                     const status = statusById[alert.id] ?? alert.status;
                     const reached = index === 0 || index === 1 || status === "Reconhecido" || status === "Resolvido";
-                    return <span className={reached ? "reached" : ""} key={step}><i />{step}<small>{index === 0 ? "Auditor IA" : index === 1 ? alert.owner : index === 2 ? (status !== "Aberto" ? "Registrado" : "Pendente") : (status === "Resolvido" ? "Concluido" : "Pendente")}</small></span>;
+                    return <span className={reached ? "reached" : ""} key={step}><i />{ptLabel(step)}<small>{index === 0 ? "Auditor IA" : index === 1 ? alert.owner : index === 2 ? (status !== "Aberto" ? "Registrado" : "Pendente") : (status === "Resolvido" ? "Concluído" : "Pendente")}</small></span>;
                   })}
                 </div>
-                <p><strong>Evidencia:</strong> {alert.evidence}</p>
+                <p><strong>Evidência:</strong> {alert.evidence}</p>
               </div>
             ) : null}
             <div className="alert-actions">
               <button onClick={() => updateAlert(alert, "Reconhecido")}>Reconhecer</button>
-              <button onClick={() => updateAlert(alert, "Resolvido")}>Resolver</button>
-              <button onClick={() => onNotify("Tarefa criada", `Coaching criado para ${alert.evidence}.`)}>Criar tarefa</button>
+              <button onClick={() => setAlertAction({ kind: "resolve", alert })}>Resolver</button>
+              <button onClick={() => setAlertAction({ kind: "task", alert })}>Criar tarefa</button>
               <button onClick={() => onOpen(alert.conversationId)}>Abrir origem</button>
             </div>
           </div>
@@ -2155,6 +2301,16 @@ function AlertsCenter({
         {visibleAlerts.length === 0 ? <div className="empty-alerts"><Bell size={22} /><strong>Nenhum insight encontrado</strong><p>Ajuste os filtros ou selecione outra aba.</p></div> : null}
         </div>
       </article>
+      {alertAction ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setAlertAction(null)}>
+          <section className="date-modal action-modal" role="dialog" aria-modal="true" aria-label={alertAction.kind === "resolve" ? "Resolver alerta" : "Criar tarefa"} onClick={(event) => event.stopPropagation()}>
+            <header><div><strong>{alertAction.kind === "resolve" ? "Resolver alerta" : "Criar tarefa de acompanhamento"}</strong><small>{alertAction.alert.type} - {alertAction.alert.evidence}</small></div><button className="icon-button" onClick={() => setAlertAction(null)} title="Fechar"><X size={17} /></button></header>
+            {alertAction.kind === "task" ? <label>Responsável<select value={taskOwner} onChange={(event) => setTaskOwner(event.target.value)}><option>Qualidade</option><option>Gestor Suporte</option><option>Comercial</option></select></label> : null}
+            <label>{alertAction.kind === "resolve" ? "Como este atendimento foi resolvido?" : "O que precisa ser acompanhado?"}<textarea value={actionNote} onChange={(event) => setActionNote(event.target.value)} placeholder={alertAction.kind === "resolve" ? "Descreva a tratativa, a confirmação com o cliente e o desfecho." : "Descreva a ação esperada, o motivo e o resultado desejado."} /></label>
+            <div className="form-actions"><button disabled={!actionNote.trim()} onClick={confirmAlertAction}>{alertAction.kind === "resolve" ? <CheckCircle2 size={16} /> : <ClipboardCheck size={16} />} {alertAction.kind === "resolve" ? "Confirmar resolução" : "Criar tarefa"}</button></div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -2546,7 +2702,7 @@ function Processes({
   setProcesses: Dispatch<SetStateAction<ManagedProcess[]>>;
   onNotify: (title: string, body: string) => void;
 }) {
-  const availableChannels: Channel[] = ["WhatsApp", "Blip Chat", "Chatbot", "Ligacao", "Audio", "Multicanal"];
+  const availableChannels: Channel[] = ["WhatsApp", "Blip Chat", "Ligacao"];
   const [draft, setDraft] = useState<ManagedProcess>({
     id: 0,
     name: "",
@@ -2608,7 +2764,7 @@ function Processes({
         body: JSON.stringify({ ...draft, steps, documents: undefined }),
       });
       const payload = (await response.json()) as { process?: ManagedProcess; error?: string };
-      if (!response.ok || !payload.process) throw new Error(payload.error ?? "Nao foi possivel salvar no banco.");
+      if (!response.ok || !payload.process) throw new Error(payload.error ?? "Não foi possível salvar no banco.");
 
       const uploadedDocuments: ManagedProcessDocument[] = [];
       for (const document of draft.documents) {
@@ -2654,15 +2810,15 @@ function Processes({
   return (
     <section className="stack">
       <article className="panel">
-        <PanelTitle icon={FileText} title="Cadastrar novo processo" subtitle="Salva localmente na tela e envia para o banco D1 quando a migracao estiver aplicada." />
+        <PanelTitle icon={FileText} title="Cadastrar novo processo" subtitle="Defina quando e como a IA deve avaliar cada atendimento." />
         <div className="process-editor">
           <label>Nome<input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Atendimento - Suporte N1" /></label>
-          <label>Setor<select value={draft.sector} onChange={(event) => setDraft((current) => ({ ...current, sector: event.target.value as Sector }))}><option>Comercial</option><option>Atendimento</option><option>Retencao</option></select></label>
-          <label>Status<select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as ManagedProcess["status"] }))}><option>Rascunho</option><option>Em revisao</option><option>Publicado</option><option>Arquivado</option></select></label>
-          <label>Objetivo<textarea value={draft.objective} onChange={(event) => setDraft((current) => ({ ...current, objective: event.target.value }))} placeholder="Descreva o objetivo da avaliacao e quando esse processo deve ser usado." /></label>
-          <label>Orientacoes para a IA<textarea value={draft.instructions} onChange={(event) => setDraft((current) => ({ ...current, instructions: event.target.value }))} placeholder="Explique excecoes, evidencias obrigatorias e o que nunca deve ser inferido." /></label>
+          <label>Setor<select value={draft.sector} onChange={(event) => setDraft((current) => ({ ...current, sector: event.target.value as Sector }))}><option>Comercial</option><option>Atendimento</option><option value="Retencao">Retenção</option></select></label>
+          <label>Status<select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as ManagedProcess["status"] }))}><option>Rascunho</option><option value="Em revisao">Em revisão</option><option>Publicado</option><option>Arquivado</option></select></label>
+          <label>Objetivo<textarea value={draft.objective} onChange={(event) => setDraft((current) => ({ ...current, objective: event.target.value }))} placeholder="Descreva o objetivo da avaliação e quando esse processo deve ser usado." /></label>
+          <label>Orientações para a IA<textarea value={draft.instructions} onChange={(event) => setDraft((current) => ({ ...current, instructions: event.target.value }))} placeholder="Explique exceções, evidências obrigatórias e o que nunca deve ser inferido." /></label>
           <fieldset className="channel-selector">
-            <legend>Canais aplicaveis</legend>
+            <legend>Canais aplicáveis</legend>
             {availableChannels.map((item) => (
               <label key={item}>
                 <input
@@ -2675,20 +2831,20 @@ function Processes({
                       : [...current.channels, item],
                   }))}
                 />
-                {item}
+                {ptLabel(item)}
               </label>
             ))}
           </fieldset>
         </div>
       </article>
       <article className="panel">
-        <PanelTitle icon={ClipboardCheck} title="Etapas do novo processo" subtitle="Inclua criterio e peso; etapas vazias sao ignoradas ao salvar." />
+        <PanelTitle icon={ClipboardCheck} title="Etapas do novo processo" subtitle="Inclua critério e peso; etapas vazias são ignoradas ao salvar." />
         <div className="step-list">
           {draft.steps.map((step, index) => (
             <div className="step-card editable-step" key={index}>
               <label>Etapa<input value={step.name} onChange={(event) => updateStep(index, "name", event.target.value)} placeholder="Ex.: Confirmacao de resolucao" /></label>
               <label>Peso<input value={step.weight} onChange={(event) => updateStep(index, "weight", event.target.value)} inputMode="numeric" /></label>
-              <label>Criterio<input value={step.criterion} onChange={(event) => updateStep(index, "criterion", event.target.value)} placeholder="Evidencia esperada para cumprir a etapa" /></label>
+              <label>Critério<input value={step.criterion} onChange={(event) => updateStep(index, "criterion", event.target.value)} placeholder="Evidência esperada para cumprir a etapa" /></label>
               <button className="icon-button remove-step" onClick={() => setDraft((current) => ({ ...current, steps: current.steps.filter((_, stepIndex) => stepIndex !== index) }))} title="Remover etapa"><Trash2 size={16} /></button>
             </div>
           ))}
@@ -2698,11 +2854,11 @@ function Processes({
         </div>
       </article>
       <article className="panel">
-        <PanelTitle icon={Paperclip} title="Documentos de referencia" subtitle="Anexe roteiros, politicas, tabelas e manuais que ajudam a IA a interpretar o papel deste processo." />
+        <PanelTitle icon={Paperclip} title="Documentos de referência" subtitle="Anexe roteiros, políticas, tabelas e manuais que ajudam a IA a interpretar o papel deste processo." />
         <label className="document-dropzone">
           <Upload size={22} />
           <strong>Selecionar documentos</strong>
-          <span>TXT, MD, CSV, JSON, PDF ou DOCX, ate 10 MB por arquivo</span>
+          <span>TXT, MD, CSV, JSON, PDF ou DOCX, até 10 MB por arquivo</span>
           <input type="file" multiple accept=".txt,.md,.csv,.json,.xml,.pdf,.doc,.docx" onChange={(event) => addDocuments(event.target.files)} />
         </label>
         {draft.documents.length ? (
@@ -2722,13 +2878,13 @@ function Processes({
         </div>
       </article>
       <article className="panel">
-        <PanelTitle icon={FileText} title="Processos cadastrados" subtitle="Clique para reutilizar como base de uma nova versao." />
+        <PanelTitle icon={FileText} title="Processos cadastrados" subtitle="Clique para reutilizar como base de uma nova versão." />
         <div className="cards-list">
           {processes.map((process) => (
             <button className="case-card" key={process.id} onClick={() => setDraft({ ...process, id: 0, status: "Rascunho", instructions: process.instructions ?? "", channels: process.channels ?? [], documents: process.documents ?? [] })}>
               <span><strong>{process.name}</strong><small>{process.objective}</small></span>
-              <span>{process.sector}<small>{process.steps.length} etapas - {process.documents.length} documentos</small></span>
-              <span className="status cumpriu">{process.status}</span>
+              <span>{ptLabel(process.sector)}<small>{process.steps.length} etapas - {process.documents.length} documentos</small></span>
+              <span className="status cumpriu">{ptLabel(process.status)}</span>
             </button>
           ))}
         </div>
@@ -2740,15 +2896,15 @@ function Processes({
 function Reports({ rows }: { rows: Conversation[] }) {
   return (
     <section className="panel">
-      <PanelTitle icon={BarChart3} title="Relatorios" subtitle="Exportacoes incluem filtros e definicoes de metricas." />
+      <PanelTitle icon={BarChart3} title="Relatórios" subtitle="Exportações incluem filtros e definições de métricas." />
       <div className="report-grid">
         {[
-          "Executivo por periodo",
+          "Executivo por período",
           "Qualidade por setor/equipe/atendente",
-          "Aderencia por etapa",
-          "Reincidencia e risco",
-          "Precisao e calibracao da IA",
-          "Precisao e volume de analises",
+          "Aderência por etapa",
+          "Reincidência e risco",
+          "Precisão e calibração da IA",
+          "Precisão e volume de análises",
         ].map((report) => (
           <button className="report-card" key={report}>
             <FileText size={20} />
@@ -2791,9 +2947,9 @@ function Integrations({
         body: JSON.stringify({ provider: config.provider, status: "Configurado", config: config.fields }),
       });
       const payload = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Nao foi possivel salvar a integracao.");
+      if (!response.ok) throw new Error(payload.error ?? "Não foi possível salvar a integração.");
       setConfigs((items) => items.map((item) => item.provider === config.provider ? { ...item, status: "Configurado" } : item));
-      onNotify("Integracao salva", `${config.provider} foi cadastrada sem armazenar segredos no navegador.`);
+      onNotify("Integração salva", `${config.provider} foi cadastrada sem armazenar segredos no navegador.`);
     } catch (error) {
       onNotify("Falha ao salvar", error instanceof Error ? error.message : "Falha inesperada.");
     } finally {
@@ -2806,12 +2962,12 @@ function Integrations({
     try {
       const response = await fetch("/api/admin/integrations/blip/test", { method: "POST" });
       const payload = (await response.json()) as { connected?: boolean; attendants?: number; error?: string };
-      if (!response.ok || !payload.connected) throw new Error(payload.error ?? "Conexao recusada.");
+      if (!response.ok || !payload.connected) throw new Error(payload.error ?? "Conexão recusada.");
       setConfigs((items) => items.map((item) => item.provider === "Blip" ? { ...item, status: "Configurado" } : item));
       onNotify("Blip conectada", `${payload.attendants ?? 0} atendentes encontrados na conta.`);
     } catch (error) {
       setConfigs((items) => items.map((item) => item.provider === "Blip" ? { ...item, status: "Erro" } : item));
-      onNotify("Blip nao conectada", error instanceof Error ? error.message : "Falha inesperada.");
+      onNotify("Blip não conectada", error instanceof Error ? error.message : "Falha inesperada.");
     } finally {
       setBusyAction(null);
     }
@@ -2826,7 +2982,7 @@ function Integrations({
         body: JSON.stringify({ limit: 20 }),
       });
       const payload = (await response.json()) as { attendants?: number; tickets?: number; messages?: number; analysisQueued?: number; error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Sincronizacao recusada.");
+      if (!response.ok) throw new Error(payload.error ?? "Sincronização recusada.");
       const result = {
         attendants: payload.attendants ?? 0,
         tickets: payload.tickets ?? 0,
@@ -2835,7 +2991,7 @@ function Integrations({
       };
       setLastSync(result);
       window.dispatchEvent(new Event("blip-synchronized"));
-      onNotify("Sincronizacao concluida", `${result.tickets} atendimentos e ${result.messages} mensagens importados.`);
+      onNotify("Sincronização concluída", `${result.tickets} atendimentos e ${result.messages} mensagens importados.`);
     } catch (error) {
       onNotify("Falha na sincronizacao", error instanceof Error ? error.message : "Falha inesperada.");
     } finally {
@@ -2852,10 +3008,10 @@ function Integrations({
         body: JSON.stringify({ limit: 3 }),
       });
       const payload = (await response.json()) as { analyzed?: number; failures?: unknown[]; error?: string; message?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Analise nao iniciada.");
-      onNotify("Fila de analise processada", payload.message ?? `${payload.analyzed ?? 0} atendimentos analisados; ${payload.failures?.length ?? 0} com pendencia.`);
+      if (!response.ok) throw new Error(payload.error ?? "Análise não iniciada.");
+      onNotify("Fila de análise processada", payload.message ?? `${payload.analyzed ?? 0} atendimentos analisados; ${payload.failures?.length ?? 0} com pendência.`);
     } catch (error) {
-      onNotify("OpenAI ainda indisponivel", error instanceof Error ? error.message : "Configure a chave no ambiente.");
+      onNotify("OpenAI ainda indisponível", error instanceof Error ? error.message : "Configure a chave no ambiente.");
     } finally {
       setBusyAction(null);
     }
@@ -2930,12 +3086,16 @@ function Admin({
   setUsers,
   configs,
   setConfigs,
+  attendants,
+  setAttendants,
   onNotify,
 }: {
   users: ManagedUser[];
   setUsers: Dispatch<SetStateAction<ManagedUser[]>>;
   configs: IntegrationConfig[];
   setConfigs: Dispatch<SetStateAction<IntegrationConfig[]>>;
+  attendants: ManagedAttendant[];
+  setAttendants: Dispatch<SetStateAction<ManagedAttendant[]>>;
   onNotify: (title: string, body: string) => void;
 }) {
   const [draftUser, setDraftUser] = useState({
@@ -2945,10 +3105,22 @@ function Admin({
     team: "Suporte N1",
     password: "",
   });
+  const [draftAttendant, setDraftAttendant] = useState({ fullName: "", email: "", team: "Atendimento" });
+  const [customTeam, setCustomTeam] = useState("");
+  const [extraTeams, setExtraTeams] = useState<string[]>([]);
+  const teamOptions = Array.from(new Set([
+    "Atendimento",
+    "Comercial",
+    "Retenção",
+    "Qualidade",
+    ...extraTeams,
+    ...users.map((user) => user.team),
+    ...attendants.map((attendant) => attendant.team),
+  ].filter(Boolean)));
 
   const saveUser = () => {
     if (!draftUser.name.trim() || !draftUser.email.trim() || draftUser.password.length < 6) {
-      onNotify("Usuario incompleto", "Informe nome, email e senha com pelo menos 6 caracteres.");
+      onNotify("Usuário incompleto", "Informe nome, e-mail e senha com pelo menos 6 caracteres.");
       return;
     }
     const created: ManagedUser = {
@@ -2965,7 +3137,7 @@ function Admin({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(draftUser),
     }).catch(() => undefined);
-    onNotify("Usuario criado", `${created.name} pode acessar como ${created.role}.`);
+    onNotify("Usuário criado", `${created.name} pode acessar como ${created.role}.`);
     setDraftUser({ name: "", email: "", role: "Operador", team: "Suporte N1", password: "" });
   };
 
@@ -2973,28 +3145,85 @@ function Admin({
     setConfigs((items) =>
       items.map((item) => (item.provider === provider ? { ...item, status: "Configurado" } : item)),
     );
-    onNotify("Supervisao atualizada", `${provider} ficou pronto para testes de integracao.`);
+    onNotify("Supervisão atualizada", `${provider} ficou pronto para testes de integração.`);
+  };
+
+  const addTeam = () => {
+    const team = customTeam.trim();
+    if (!team) return;
+    setExtraTeams((items) => Array.from(new Set([...items, team])));
+    setDraftAttendant((current) => ({ ...current, team }));
+    setCustomTeam("");
+    onNotify("Equipe adicionada", `${team} já pode ser usada nos cadastros.`);
+  };
+
+  const saveAttendant = async () => {
+    if (!draftAttendant.fullName.trim() || !draftAttendant.team.trim()) {
+      onNotify("Atendente incompleto", "Informe nome e equipe antes de cadastrar.");
+      return;
+    }
+    try {
+      const response = await fetch("/api/admin/attendants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draftAttendant),
+      });
+      const payload = (await response.json()) as { attendant?: ManagedAttendant; error?: string };
+      if (!response.ok || !payload.attendant) throw new Error(payload.error ?? "Não foi possível cadastrar o atendente.");
+      const attendant = payload.attendant;
+      setAttendants((items) => [attendant, ...items]);
+      onNotify("Atendente cadastrado", `${attendant.fullName} foi vinculado à equipe ${attendant.team}.`);
+      setDraftAttendant({ fullName: "", email: "", team: draftAttendant.team });
+    } catch (error) {
+      onNotify("Atendente não cadastrado", error instanceof Error ? error.message : "Falha inesperada.");
+    }
   };
 
   return (
     <section className="stack">
       <article className="panel">
-        <PanelTitle icon={Settings} title="Administracao" subtitle="Criacao de usuarios, perfis e integracoes da Uai Telecom." />
+        <PanelTitle icon={Settings} title="Administração" subtitle="Criação de usuários, perfis e acessos da Uai Telecom." />
         <div className="process-editor">
-          <label>Nome<input value={draftUser.name} onChange={(event) => setDraftUser((current) => ({ ...current, name: event.target.value }))} placeholder="Nome do usuario" /></label>
+          <label>Nome<input value={draftUser.name} onChange={(event) => setDraftUser((current) => ({ ...current, name: event.target.value }))} placeholder="Nome do usuário" /></label>
           <label>Email<input value={draftUser.email} onChange={(event) => setDraftUser((current) => ({ ...current, email: event.target.value }))} placeholder="email@uaitelecom.com.br" /></label>
           <label>Perfil<select value={draftUser.role} onChange={(event) => setDraftUser((current) => ({ ...current, role: event.target.value as UserRole }))}><option>Administrador</option><option>Gestor</option><option>Operador</option></select></label>
-          <label>Equipe<input value={draftUser.team} onChange={(event) => setDraftUser((current) => ({ ...current, team: event.target.value }))} /></label>
-          <label>Senha<input type="password" value={draftUser.password} onChange={(event) => setDraftUser((current) => ({ ...current, password: event.target.value }))} placeholder="Minimo 6 caracteres" /></label>
+          <label>Equipe<select value={draftUser.team} onChange={(event) => setDraftUser((current) => ({ ...current, team: event.target.value }))}>{teamOptions.map((team) => <option key={team}>{team}</option>)}</select></label>
+          <label>Senha<input type="password" value={draftUser.password} onChange={(event) => setDraftUser((current) => ({ ...current, password: event.target.value }))} placeholder="Mínimo de 6 caracteres" /></label>
           <div className="form-actions">
-            <button onClick={saveUser}>Criar usuario</button>
+            <button onClick={saveUser}>Criar usuário</button>
           </div>
+        </div>
+      </article>
+
+      <section className="content-grid two-one attendants-admin-grid">
+        <article className="panel">
+          <PanelTitle icon={UserPlus} title="Cadastrar atendente" subtitle="Cadastre manualmente ou sincronize os atendentes existentes na Blip." />
+          <div className="process-editor attendant-editor">
+            <label>Nome<input value={draftAttendant.fullName} onChange={(event) => setDraftAttendant((current) => ({ ...current, fullName: event.target.value }))} placeholder="Nome do atendente" /></label>
+            <label>E-mail<input value={draftAttendant.email} onChange={(event) => setDraftAttendant((current) => ({ ...current, email: event.target.value }))} placeholder="atendente@uaitelecom.com.br" /></label>
+            <label>Equipe<select value={draftAttendant.team} onChange={(event) => setDraftAttendant((current) => ({ ...current, team: event.target.value }))}>{teamOptions.map((team) => <option key={team}>{team}</option>)}</select></label>
+            <div className="form-actions"><button onClick={saveAttendant}><UserPlus size={16} /> Cadastrar atendente</button></div>
+          </div>
+        </article>
+
+        <article className="panel">
+          <PanelTitle icon={Building2} title="Equipes" subtitle="Organize Atendimento, Comercial, Retenção e outras áreas da operação." />
+          <div className="team-create"><input value={customTeam} onChange={(event) => setCustomTeam(event.target.value)} placeholder="Nome da nova equipe" /><button onClick={addTeam}><Plus size={16} /> Adicionar</button></div>
+          <div className="team-pills">{teamOptions.map((team) => <span key={team}>{team}<small>{attendants.filter((attendant) => attendant.team === team).length} atendentes</small></span>)}</div>
+        </article>
+      </section>
+
+      <article className="panel">
+        <PanelTitle icon={Users} title="Atendentes cadastrados" subtitle="A origem indica se o cadastro veio da Blip ou foi criado manualmente." />
+        <div className="attendant-table">
+          <header><span>Atendente</span><span>Equipe</span><span>Origem</span><span>Status</span></header>
+          {attendants.map((attendant) => <div key={attendant.identity}><span><strong>{attendant.fullName}</strong><small>{attendant.email || attendant.identity}</small></span><span>{attendant.team}</span><span className={`source-badge ${attendant.source.toLowerCase()}`}>{attendant.source}</span><span className="status cumpriu">{attendant.status}</span></div>)}
         </div>
       </article>
 
       <section className="content-grid two-one">
         <article className="panel">
-          <PanelTitle icon={Users} title="Usuarios cadastrados" subtitle="Persistencia preparada no D1; a lista responde imediatamente na interface." />
+          <PanelTitle icon={Users} title="Usuários cadastrados" subtitle="Contas de acesso separadas dos atendentes sincronizados pela Blip." />
           <div className="cards-list">
             {users.map((user) => (
               <div className="case-card" key={user.id}>
@@ -3007,11 +3236,11 @@ function Admin({
         </article>
 
         <article className="panel">
-          <PanelTitle icon={Activity} title="Supervisao do administrador" subtitle="Atalhos para marcar integracoes como prontas apos validar credenciais." />
+          <PanelTitle icon={Activity} title="Supervisão do administrador" subtitle="Atalhos para marcar integrações como prontas após validar credenciais." />
           <div className="cards-list">
             {configs.map((config) => (
               <div className="case-card" key={config.provider}>
-                <span><strong>{config.provider}</strong><small>{config.provider === "PBX SSH" ? "Busca gravacoes no servidor via SSH" : "Usado pelo pipeline de IA"}</small></span>
+                <span><strong>{config.provider}</strong><small>{config.provider === "PBX SSH" ? "Busca gravações no servidor via SSH" : "Usado pelo pipeline de IA"}</small></span>
                 <span className={config.status === "Configurado" ? "status cumpriu" : "status incerto"}>{config.status}</span>
                 <button onClick={() => markConfigured(config.provider)}>Marcar pronto</button>
               </div>
@@ -3021,12 +3250,12 @@ function Admin({
       </section>
 
       <article className="panel">
-        <PanelTitle icon={ShieldCheck} title="Perfis e permissoes" subtitle="Gestor e operador veem superficies diferentes." />
+        <PanelTitle icon={ShieldCheck} title="Perfis e permissões" subtitle="Gestor e operador veem superfícies diferentes." />
         <div className="role-grid">
           {[
-            ["Administrador", "Configura usuarios, Blip, OpenAI, PBX SSH, processos e politicas."],
-            ["Gestor", "Acompanha alertas, reincidencias, revisoes e feedbacks da equipe."],
-            ["Operador", "Ve somente o proprio resumo, atendimentos, feedbacks e contestacoes permitidas."],
+            ["Administrador", "Configura usuários, Blip, OpenAI, PBX SSH, processos e políticas."],
+            ["Gestor", "Acompanha alertas, reincidências, revisões e feedbacks da equipe."],
+            ["Operador", "Vê somente o próprio resumo, atendimentos, feedbacks e contestações permitidas."],
           ].map(([role, body]) => (
             <div className="info-card" key={role}>
               <h3>{role}</h3>
@@ -3037,7 +3266,7 @@ function Admin({
       </article>
 
       <article className="panel">
-        <PanelTitle icon={AlertTriangle} title="Pendencias explicitas" subtitle="Configuracoes que dependem da operacao real." />
+        <PanelTitle icon={AlertTriangle} title="Pendências explícitas" subtitle="Configurações que dependem da operação real." />
         <ul className="decision-list">
           {pendingDecisions.map((decision) => (
             <li key={decision}>{decision}</li>
@@ -3078,7 +3307,7 @@ function ChannelPill({ channel }: { channel: Channel }) {
   return (
     <span className="channel-pill">
       <Icon size={14} />
-      {channel}
+      {ptLabel(channel)}
     </span>
   );
 }

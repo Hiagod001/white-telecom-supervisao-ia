@@ -48,3 +48,14 @@ test("analysis pipeline loads processes, documents, transcript and audio before 
   assert.match(migration, /CREATE TABLE `process_documents`/);
   assert.match(migration, /CREATE TABLE `conversation_analyses`/);
 });
+
+test("administrator can list and create attendants without storing Blip secrets in the browser", async () => {
+  const attendantsRoute = await readFile(new URL("../app/api/admin/attendants/route.ts", import.meta.url), "utf8");
+
+  assert.match(attendantsRoute, /export async function GET/);
+  assert.match(attendantsRoute, /export async function POST/);
+  assert.match(attendantsRoute, /blipAttendants/);
+  assert.match(attendantsRoute, /source: row\.identity\.startsWith\("manual:"\)/);
+  assert.match(attendantsRoute, /crypto\.randomUUID/);
+  assert.doesNotMatch(attendantsRoute, /BLIP_AUTH_KEY/);
+});

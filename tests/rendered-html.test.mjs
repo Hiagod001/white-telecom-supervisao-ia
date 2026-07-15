@@ -9,21 +9,29 @@ test("Uai Telecom product source includes the requested surfaces", async () => {
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(layout, /Uai Telecom - Supervisao IA/);
+  assert.match(layout, /Uai Telecom - Supervisão IA/);
   assert.match(page, /Uai Telecom/);
   assert.doesNotMatch(page, /Delipe|Cota mensal|500 analises/i);
   assert.match(page, /OperatorPanel/);
+  assert.match(page, /operatorNavItems/);
   assert.match(page, /Cadastrar novo processo/);
+  assert.match(page, /Canais aplicáveis/);
+  assert.match(page, /WhatsApp/);
+  assert.match(page, /Blip Chat/);
+  assert.match(page, /Ligação/);
   assert.match(page, /PBX SSH/);
   assert.match(page, /\/api\/admin\/users/);
-  assert.match(page, /Reincidencia/);
+  assert.match(page, /Reincidência/);
   assert.match(page, /Por atendimento/);
-  assert.match(page, /Leads e vendas por periodo/);
-  assert.match(page, /Como a IA usa as classificacoes de/);
+  assert.match(page, /Leads e vendas por período/);
   assert.match(page, /alert-timeline/);
-  assert.match(page, /Documentos de referencia/);
+  assert.match(page, /Documentos de referência/);
   assert.match(page, /chat-message-row/);
   assert.match(page, /Sincronizar agora/);
+  assert.match(page, /Confirmar resolução/);
+  assert.match(page, /Confirmar atribuição/);
+  assert.match(page, /Ativar modo claro/);
+  assert.match(page, /Cadastrar atendente/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "PROCESS_FILES"/);
 });

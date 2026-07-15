@@ -1,14 +1,9 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Inter, Space_Grotesk } from "next/font/google";
+import { Geist_Mono, Nunito_Sans } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
-
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
+const nunitoSans = Nunito_Sans({
+  variable: "--font-nunito-sans",
   subsets: ["latin"],
 });
 
@@ -18,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Uai Telecom - Supervisao IA",
+  title: "Uai Telecom - Supervisão IA",
   description:
-    "Plataforma da Uai Telecom para supervisao, auditoria e melhoria continua de atendimentos.",
+    "Plataforma da Uai Telecom para supervisão, auditoria e melhoria contínua de atendimentos.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -35,7 +30,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body
-        className={`${inter.variable} ${spaceGrotesk.variable} ${geistMono.variable} antialiased`}
+        className={`${nunitoSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
       </body>
