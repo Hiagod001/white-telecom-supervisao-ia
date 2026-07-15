@@ -28,6 +28,11 @@
 - Modo claro do Dashboard: `outputs/qa-light-dashboard-final.png`.
 - Modo claro do Agente de IA: `outputs/qa-light-agent-final.png` e `outputs/qa-light-agent-mobile-final.png`.
 - Modo claro da lista de atendentes: `outputs/qa-light-attendants-final.png`.
+- Modo claro das classificacoes: `outputs/qa-light-classifications-v2.png`.
+- Heatmap claro: `outputs/qa-light-heatmap-v2.png`.
+- Tooltip claro dos graficos: `outputs/qa-light-chart-tooltip-v2.png`.
+- Assistente flutuante claro: `outputs/qa-light-assistant-panel-v2.png`.
+- Alertas claros, recolhido e expandido: `outputs/qa-light-alerts-v2.png` e `outputs/qa-light-alerts-expanded-v2.png`.
 
 ## Verificacoes
 
@@ -54,6 +59,13 @@
 - Textos: rotulos visiveis no ranking, atendentes e Agente de IA foram normalizados com acentos em portugues.
 - Comparacao desta rodada: os quatro recortes enviados pelo cliente foram inspecionados junto das capturas finais nos mesmos estados.
 - Mobile desta rodada: Agente de IA validado em 390 x 844 sem overflow horizontal ou sobreposicao.
+- Classificacoes: informativo, acao de adicionar, badges semanticos, codigos e switches usam contraste proprio do modo claro.
+- Heatmap: a escala de aderencia usa tons rosados claros e texto vinho legivel sem perder a comparacao entre valores.
+- Graficos: os tooltips usam tokens de tema e ficam brancos no modo claro, inclusive durante hover real.
+- Navegacao: contadores e avatar do usuario usam superficies claras e mantem o destaque vermelho nos estados ativos.
+- Alertas: severidade, status e timeline expandida foram validados em claro; a regra legada com `!important` foi neutralizada por variante.
+- Assistente flutuante: cabecalho, sugestoes, resposta e compositor seguem o tema claro com textos acentuados.
+- Console desta rodada: nenhum erro ou aviso durante os seis fluxos comparados.
 
 ## Historico de ajustes
 
@@ -72,7 +84,8 @@
 - P2: os estados dos conectores podiam crescer dentro do cabecalho. Os chips agora preservam dimensoes estaveis em desktop e mobile.
 - P1: regras escuras tardias vazavam para o modo claro em cards, rankings, atendentes e no Agente de IA. Foram adicionados overrides completos por tema e por estado interativo.
 - P2: legendas compactas ainda herdavam o fundo roxo do tema escuro. A familia compartilhada de legendas, barras, alertas e audio recebeu superficie e contraste claros.
+- P1: classificacoes, heatmap, tooltips, badges laterais, alertas e assistente flutuante ainda herdavam estilos escuros. Todos passaram a usar tokens e variantes finais do tema claro.
 
 ## Resultado final
 
-passed
+final result: passed

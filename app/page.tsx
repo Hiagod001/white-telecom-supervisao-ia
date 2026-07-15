@@ -1253,13 +1253,13 @@ export default function Home() {
               <aside className="assistant-panel" aria-label="Agente de IA">
                 <header><span><Bot size={19} /></span><div><strong>Agente de IA</strong><small>Uai Assistant</small></div><button className="icon-button" onClick={() => setAssistantOpen(false)} title="Fechar"><X size={17} /></button></header>
                 <div className="assistant-body">
-                  <div className="assistant-welcome"><Bot size={28} /><strong>Como posso ajudar?</strong><p>Pergunte sobre operadores, conversoes, alertas ou metricas.</p></div>
-                  {["Qual meu melhor operador esta semana?", "Quais sao as principais objecoes?", "Qual a projecao para o proximo mes?", "Tem algum alerta critico?"].map((prompt) => (
+                  <div className="assistant-welcome"><Bot size={28} /><strong>Como posso ajudar?</strong><p>Pergunte sobre operadores, conversões, alertas ou métricas.</p></div>
+                  {["Qual é meu melhor operador esta semana?", "Quais são as principais objeções?", "Qual a projeção para o próximo mês?", "Tem algum alerta crítico?"].map((prompt) => (
                     <button key={prompt} onClick={() => setAgentQuestion(prompt)}>{prompt}</button>
                   ))}
-                  {agentQuestion ? <div className="assistant-answer"><strong>{agentQuestion}</strong><p>Encontrei dados relacionados no periodo atual. A integracao OpenAI podera substituir esta resposta demonstrativa mantendo as mesmas fontes e permissoes.</p></div> : null}
+                  {agentQuestion ? <div className="assistant-answer"><strong>{agentQuestion}</strong><p>Encontrei dados relacionados no período atual. A integração OpenAI poderá substituir esta resposta demonstrativa mantendo as mesmas fontes e permissões.</p></div> : null}
                 </div>
-                <footer><input value={agentQuestion} onChange={(event) => setAgentQuestion(event.target.value)} placeholder="Digite sua pergunta..." /><button className="icon-button" onClick={() => notify("Pergunta enviada", "O agente consultou os dados disponiveis.")} title="Enviar"><Send size={17} /></button></footer>
+                <footer><input value={agentQuestion} onChange={(event) => setAgentQuestion(event.target.value)} placeholder="Digite sua pergunta..." /><button className="icon-button" onClick={() => notify("Pergunta enviada", "O agente consultou os dados disponíveis.")} title="Enviar"><Send size={17} /></button></footer>
               </aside>
             ) : null}
           </>
@@ -1389,7 +1389,7 @@ function Overview({
                 <XAxis dataKey="date" stroke="#9a9a9a" />
                 <YAxis yAxisId="left" stroke="#9a9a9a" />
                 <YAxis yAxisId="right" orientation="right" domain={[0, 10]} stroke="#9a9a9a" />
-                <Tooltip contentStyle={{ background: "#151515", border: "1px solid #363636", color: "#fff" }} />
+                <Tooltip contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", color: "var(--chart-tooltip-text)" }} labelStyle={{ color: "var(--chart-tooltip-text)" }} />
                 <Legend />
                 <Bar yAxisId="left" dataKey="volume" fill={appConfig.colors.accent} radius={[4, 4, 0, 0]} />
                 <Line yAxisId="left" type="monotone" dataKey="resultado" name={resultLabel} stroke={appConfig.colors.success} strokeWidth={3} dot={{ r: 2 }} />
@@ -1408,7 +1408,7 @@ function Overview({
                     <Cell key={index} fill={["#ef2b2d", "#d72228", "#b91f24", "#8f2327", "#6f2a2d", "#5f5f5f", "#8b8b8b"][index % 7]} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ background: "#191112", border: "1px solid #5f2b2e", color: "#fff" }} />
+                <Tooltip contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", color: "var(--chart-tooltip-text)" }} labelStyle={{ color: "var(--chart-tooltip-text)" }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -2024,7 +2024,7 @@ function Kpis({
               <CartesianGrid stroke="#292929" vertical={false} />
               <XAxis dataKey="date" stroke="#8e8e8e" fontSize={11} />
               <YAxis stroke="#8e8e8e" fontSize={11} />
-              <Tooltip contentStyle={{ background: "#151515", border: "1px solid #343434", borderRadius: 6 }} />
+              <Tooltip contentStyle={{ background: "var(--chart-tooltip-bg)", border: "1px solid var(--chart-tooltip-border)", color: "var(--chart-tooltip-text)", borderRadius: 6 }} labelStyle={{ color: "var(--chart-tooltip-text)" }} />
               <Bar dataKey="volume" fill="#ef2b2d" radius={[4, 4, 0, 0]} />
               <Line type="monotone" dataKey="resultado" name={outcomeLabel} stroke="#ffffff" strokeWidth={2} dot={{ r: 2 }} />
             </ComposedChart>
@@ -2090,7 +2090,7 @@ function Classifications({ sector, onNotify }: { sector: Sector; onNotify: (titl
 
   return (
     <section className="stack">
-      <article className="classification-info"><div><strong>Como a IA usa as classificacoes de {sector}?</strong><p>A cada analise, a IA recebe somente as regras ativas deste contexto e escolhe exatamente uma. Desative sem excluir para preservar o historico.</p></div><span><b>Resolvido</b> soma na taxa de resolucao<br /><b>Non-Score</b> fica fora dos KPIs</span></article>
+      <article className="classification-info"><div><strong>Como a IA usa as classificações de {sector}?</strong><p>A cada análise, a IA recebe somente as regras ativas deste contexto e escolhe exatamente uma. Desative sem excluir para preservar o histórico.</p></div><span><b>Resolvido</b> soma na taxa de resolução<br /><b>Non-Score</b> fica fora dos KPIs</span></article>
       <div className="kpi-strip classification-stats"><MiniStat label="Total" value={String(items.length)} /><MiniStat label="Ativas" value={String(items.filter((item) => item.active).length)} /><MiniStat label="Resolvidas" value={String(items.filter((item) => item.resolved).length)} /><MiniStat label="Non-Score" value={String(items.filter((item) => item.nonScore).length)} /></div>
       <article className="panel classification-create"><PanelTitle icon={Plus} title={`Nova classificação de ${ptLabel(sector)}`} subtitle="Cadastre uma regra para as próximas análises deste contexto." /><input placeholder="valor_chave" value={draft.value} onChange={(event) => setDraft((current) => ({ ...current, value: event.target.value }))} /><input placeholder="Nome da classificação" value={draft.label} onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))} /><input placeholder="Descrição para orientar a IA" value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /><button onClick={addClassification}><Plus size={16} /> Adicionar</button></article>
       <article className="panel classification-table"><header><span>Valor</span><span>Nome</span><span>Descrição</span><span>Ativa</span></header>{items.map((item) => <div key={item.value}><code>{item.value}</code><span><strong>{item.label}</strong><span className="classification-badges">{item.resolved ? <small className="resolved-badge">Resolvido</small> : null}{item.nonScore ? <small>Non-Score</small> : null}</span></span><p>{item.description}</p><button className={`switch ${item.active ? "on" : ""}`} onClick={() => { setItemsBySector((current) => ({ ...current, [sector]: current[sector].map((entry) => entry.value === item.value ? { ...entry, active: !entry.active } : entry) })); onNotify(item.active ? "Classificação desativada" : "Classificação ativada", item.label); }} aria-label={`${item.active ? "Desativar" : "Ativar"} ${item.label}`}><span /></button></div>)}</article>
@@ -2168,17 +2168,18 @@ function Adherence({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: string
   const names = ["Saudacao", "Diagnostico", "Confirmacao", "Registro", "Escalonamento"];
   return (
     <section className="panel">
-      <PanelTitle icon={ClipboardCheck} title="Heatmap de aderencia" subtitle="Agregado apenas com atendimentos elegiveis e aplicaveis." />
+      <PanelTitle icon={ClipboardCheck} title="Heatmap de aderência" subtitle="Agregado apenas com atendimentos elegíveis e aplicáveis." />
       <div className="heatmap">
         {attendantNames.slice(0, 10).map((name, rowIndex) => (
           <div className="heat-row" key={name}>
             <strong>{name}</strong>
             {names.map((step, cellIndex) => {
               const value = 45 + Math.round(pseudoRandom(rowIndex * 7 + cellIndex) * 52);
+              const intensity = 20 + Math.round(((value - 45) / 52) * 55);
               return (
                 <button
                   key={step}
-                  style={{ background: `color-mix(in srgb, #ef2b2d ${value}%, #1d1d1d)` }}
+                  style={{ "--heat-level": `${intensity}%` } as CSSProperties}
                   onClick={() => onOpen(rows[rowIndex + cellIndex]?.id ?? rows[0]?.id)}
                   title={`${step}: ${value}%`}
                 >
