@@ -25,6 +25,9 @@
 - Comparacao visual de Reincidencia: `outputs/qa-recurrence-comparison.png`.
 - Integracoes Blip desktop e mobile: `outputs/qa-blip-integrations-desktop.png` e `outputs/qa-blip-integrations-mobile.png`.
 - Transcricao Blip em formato de chat: `outputs/qa-blip-chat-desktop.png`.
+- Modo claro do Dashboard: `outputs/qa-light-dashboard-final.png`.
+- Modo claro do Agente de IA: `outputs/qa-light-agent-final.png` e `outputs/qa-light-agent-mobile-final.png`.
+- Modo claro da lista de atendentes: `outputs/qa-light-attendants-final.png`.
 
 ## Verificacoes
 
@@ -45,6 +48,12 @@
 - Processos: objetivo, instrucoes, canais, etapas dinamicas e documentos compoem o contexto futuro da IA.
 - Transcricao: mensagens de cliente e atendente, eventos, midias, horarios e estados aparecem em ordem cronologica no modelo visual do Blip Desk.
 - Mobile: cards de integracao, editor de processo e chat permanecem sem rolagem horizontal.
+- Modo claro: cards de metricas, rankings, legendas, atendentes e estados de hover preservam contraste e hierarquia.
+- Agente de IA: historico, toolbar, estado vazio, sugestoes, mensagens e composer respondem ao tema claro.
+- Icones: botoes e cards mantem o vermelho da marca e continuam legiveis nos estados normal, ativo e hover.
+- Textos: rotulos visiveis no ranking, atendentes e Agente de IA foram normalizados com acentos em portugues.
+- Comparacao desta rodada: os quatro recortes enviados pelo cliente foram inspecionados junto das capturas finais nos mesmos estados.
+- Mobile desta rodada: Agente de IA validado em 390 x 844 sem overflow horizontal ou sobreposicao.
 
 ## Historico de ajustes
 
@@ -61,6 +70,8 @@
 - P1: a transcricao era apresentada como campos separados. Ela foi reconstruida como um chat cronologico e alimentado pelas mensagens importadas da Blip.
 - P1: nao havia ingestao real da Blip. Foram adicionados webhook, sincronizacao de atendentes, tickets e historicos, deduplicacao e fila de analise.
 - P2: os estados dos conectores podiam crescer dentro do cabecalho. Os chips agora preservam dimensoes estaveis em desktop e mobile.
+- P1: regras escuras tardias vazavam para o modo claro em cards, rankings, atendentes e no Agente de IA. Foram adicionados overrides completos por tema e por estado interativo.
+- P2: legendas compactas ainda herdavam o fundo roxo do tema escuro. A familia compartilhada de legendas, barras, alertas e audio recebeu superficie e contraste claros.
 
 ## Resultado final
 

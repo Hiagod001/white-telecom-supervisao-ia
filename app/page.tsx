@@ -1425,17 +1425,17 @@ function Overview({
 
       <section className="content-grid">
         <article className="panel">
-          <PanelTitle icon={Users} title={peopleTitle} subtitle="Sinaliza amostra pequena e usa somente atendimentos elegiveis." />
+          <PanelTitle icon={Users} title={peopleTitle} subtitle="Sinaliza amostra pequena e usa somente atendimentos elegíveis." />
           <div className="ranking-list">
             {ranking.map((row, index) => (
               <div className="ranking-row" key={row.name}>
                 <b>{index + 1}</b>
                 <span>
                   <strong>{row.name}</strong>
-                  <small>{row.team} - {row.volume < 8 ? "amostra pequena" : `${row.volume} casos elegiveis`}</small>
+                  <small>{row.team} - {row.volume < 8 ? "amostra pequena" : `${row.volume} casos elegíveis`}</small>
                 </span>
                 <em>{row.score.toFixed(1)}</em>
-                <small>{percent(row.adherence)} aderencia</small>
+                <small>{percent(row.adherence)} aderência</small>
                 <small className={Number(row.trend) >= 0 ? "positive" : "negative"}>{row.trend}</small>
               </div>
             ))}
@@ -1443,7 +1443,7 @@ function Overview({
         </article>
 
         <article className="panel">
-          <PanelTitle icon={ClipboardCheck} title="Etapas com menor aderencia" subtitle="Clique nas celulas nas telas de aderencia para chegar aos atendimentos." />
+          <PanelTitle icon={ClipboardCheck} title="Etapas com menor aderência" subtitle="Clique nas células nas telas de aderência para chegar aos atendimentos." />
           <div className="step-bars">
             {steps.map(([name, value]) => (
               <div key={name}>
@@ -1937,7 +1937,7 @@ function Agents({ ranking, rows, sector }: { ranking: AgentRankingRow[]; rows: C
           {ranking.map((row, index) => (
             <button className={selected?.name === row.name ? "active" : ""} key={row.name} onClick={() => setSelectedName(row.name)}>
               <b>{index + 1}</b>
-              <span><strong>{row.name}</strong><small>{row.team} - {row.volume} elegiveis</small></span>
+              <span><strong>{row.name}</strong><small>{row.team} - {row.volume} elegíveis</small></span>
               <em>{row.score.toFixed(1)}</em>
               <ChevronRight size={16} />
             </button>
@@ -1945,17 +1945,17 @@ function Agents({ ranking, rows, sector }: { ranking: AgentRankingRow[]; rows: C
         </div>
       </article>
       <article className="panel person-detail-panel" key={selected?.name}>
-        <PanelTitle icon={UserCheck} title={selected?.name ?? (sector === "Comercial" ? "Vendedor" : "Atendente")} subtitle={`Resumo individual do ${personLabel} no periodo selecionado.`} />
+        <PanelTitle icon={UserCheck} title={selected?.name ?? (sector === "Comercial" ? "Vendedor" : "Atendente")} subtitle={`Resumo individual do ${personLabel} no período selecionado.`} />
         <div className="person-score-row">
-          <div><small>Nota consolidada</small><strong>{selected?.score.toFixed(1) ?? "0.0"}</strong><span className="positive">{selected?.trend ?? "0.0"} no periodo</span></div>
+          <div><small>Nota consolidada</small><strong>{selected?.score.toFixed(1) ?? "0.0"}</strong><span className="positive">{selected?.trend ?? "0.0"} no período</span></div>
           <MiniStat label="Aderência" value={percent(selected?.adherence ?? 0)} />
           <MiniStat label={sector === "Comercial" ? "Vendas" : "Resolvidos"} value={String(sector === "Comercial" ? sales : resolved)} />
           <MiniStat label="Volume analisado" value={String(selectedRows.length)} />
         </div>
-        <div className="person-progress"><span><strong>{sector === "Comercial" ? "Conversao" : "Taxa de resolucao"}</strong><b>{percent(((sector === "Comercial" ? sales : resolved) / Math.max(selectedRows.length, 1)) * 100)}</b></span><div><i style={{ width: `${Math.min(100, ((sector === "Comercial" ? sales : resolved) / Math.max(selectedRows.length, 1)) * 100)}%` }} /></div></div>
+        <div className="person-progress"><span><strong>{sector === "Comercial" ? "Conversão" : "Taxa de resolução"}</strong><b>{percent(((sector === "Comercial" ? sales : resolved) / Math.max(selectedRows.length, 1)) * 100)}</b></span><div><i style={{ width: `${Math.min(100, ((sector === "Comercial" ? sales : resolved) / Math.max(selectedRows.length, 1)) * 100)}%` }} /></div></div>
         <div className="info-card wide contextual-feedback">
           <h3>Feedback continuo</h3>
-          <p>{sector === "Comercial" ? "Boa evolucao na apresentacao de planos. Priorize descoberta da necessidade antes da oferta e registre o motivo quando o lead nao avancar." : "Boa evolucao no acolhimento e diagnostico. Reforce a confirmacao de resolucao antes de encerrar e informe claramente o proximo passo ao cliente."}</p>
+          <p>{sector === "Comercial" ? "Boa evolução na apresentação de planos. Priorize a descoberta da necessidade antes da oferta e registre o motivo quando o lead não avançar." : "Boa evolução no acolhimento e diagnóstico. Reforce a confirmação de resolução antes de encerrar e informe claramente o próximo passo ao cliente."}</p>
         </div>
       </article>
     </section>
@@ -2529,9 +2529,9 @@ function createAgentThreads(
   period: string,
 ): AgentThread[] {
   return [
-    ["Qual meu melhor vendedor esta semana?", "ha 16 horas"],
-    ["Tem algum alerta critico?", "ontem"],
-    ["Por que os clientes nao fecham?", "ha 2 dias"],
+    ["Qual é meu melhor vendedor esta semana?", "há 16 horas"],
+    ["Tem algum alerta crítico?", "ontem"],
+    ["Por que os clientes não fecham?", "há 2 dias"],
   ].map(([question, updatedAt], index) => {
     const response = buildCommercialAgentAnswer(question, rows, ranking, alerts, period);
     return {
@@ -2564,10 +2564,10 @@ function AiAgent({
   const [historyOpen, setHistoryOpen] = useState(false);
   const activeThread = threads.find((thread) => thread.id === activeThreadId);
   const suggestions = [
-    "Como esta a operacao comercial este mes?",
-    "Qual e o melhor vendedor?",
-    "Por que os clientes nao fecham?",
-    "Quais alertas exigem atencao?",
+    "Como está a operação comercial este mês?",
+    "Qual é o melhor vendedor?",
+    "Por que os clientes não fecham?",
+    "Quais alertas exigem atenção?",
   ];
 
   const startNewChat = () => {
@@ -2614,9 +2614,9 @@ function AiAgent({
 
   return (
     <section className="ai-chat-shell">
-      <aside className={`ai-history ${historyOpen ? "mobile-open" : ""}`} aria-label="Historico do agente">
+      <aside className={`ai-history ${historyOpen ? "mobile-open" : ""}`} aria-label="Histórico do agente">
         <header>
-          <div><strong>Conversas</strong><small>{threads.length} historicos</small></div>
+          <div><strong>Conversas</strong><small>{threads.length} históricos</small></div>
           <button className="icon-button" onClick={startNewChat} title="Nova conversa"><Plus size={17} /></button>
         </header>
         <button className="ai-new-chat" onClick={startNewChat}><Plus size={16} />Nova conversa</button>
@@ -2632,13 +2632,13 @@ function AiAgent({
             </button>
           ))}
         </div>
-        <footer><ShieldCheck size={17} /><span><strong>Dados protegidos</strong><small>Respostas limitadas as fontes permitidas.</small></span></footer>
+        <footer><ShieldCheck size={17} /><span><strong>Dados protegidos</strong><small>Respostas limitadas às fontes permitidas.</small></span></footer>
       </aside>
 
       <div className="ai-chat-main">
         <header className="ai-chat-toolbar">
           <button className="icon-button ai-history-toggle" onClick={() => setHistoryOpen((open) => !open)} title="Abrir conversas"><PanelLeftOpen size={18} /></button>
-          <div><strong>Uai Sales AI</strong><small>Analise comercial baseada nos dados do filtro atual</small></div>
+          <div><strong>Uai Sales AI</strong><small>Análise comercial baseada nos dados do filtro atual</small></div>
           <span className="ai-data-status"><span />Base demonstrativa</span>
           {activeThread ? <button onClick={startNewChat}><Plus size={15} />Novo chat</button> : null}
         </header>
@@ -2649,20 +2649,20 @@ function AiAgent({
               <article className={`ai-message ${message.role}`} key={message.id}>
                 {message.role === "assistant" ? <span className="ai-avatar"><Bot size={17} /></span> : null}
                 <div className="ai-message-bubble">
-                  <strong>{message.role === "assistant" ? "Uai Sales AI" : "Voce"}</strong>
+                  <strong>{message.role === "assistant" ? "Uai Sales AI" : "Você"}</strong>
                   {message.content.split("\n\n").map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                   {message.facts?.length ? <ul>{message.facts.map((fact) => <li key={fact}>{fact}</li>)}</ul> : null}
                   {message.sources?.length ? <div className="ai-sources"><small>Fontes consultadas</small>{message.sources.map((source) => <span key={source}>{source}</span>)}</div> : null}
                 </div>
               </article>
             ))}
-            {isThinking ? <article className="ai-message assistant"><span className="ai-avatar"><Bot size={17} /></span><div className="ai-thinking"><i /><i /><i /><span>Analisando dados disponiveis</span></div></article> : null}
+            {isThinking ? <article className="ai-message assistant"><span className="ai-avatar"><Bot size={17} /></span><div className="ai-thinking"><i /><i /><i /><span>Analisando dados disponíveis</span></div></article> : null}
           </div>
         ) : (
           <div className="ai-empty-state">
             <span><Bot size={30} /></span>
             <h3>Como posso ajudar?</h3>
-            <p>Pergunte sobre vendas, conversao, vendedores, perdas, aderencia, previsoes, alertas ou qualquer indicador do sistema.</p>
+            <p>Pergunte sobre vendas, conversão, vendedores, perdas, aderência, previsões, alertas ou qualquer indicador do sistema.</p>
             <div className="ai-suggestion-grid">
               {suggestions.map((suggestion) => <button key={suggestion} onClick={() => submitQuestion(suggestion)}>{suggestion}</button>)}
             </div>
