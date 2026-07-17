@@ -9,6 +9,7 @@ Painel operacional para supervisao de atendimentos da Uai Telecom. A aplicacao c
 - Visao individual do operador com feedbacks e pendencias.
 - Cadastro de processos e classificacoes de atendimento.
 - Central de alertas com filtros, reincidencias e acoes de coaching.
+- Gestao de tarefas com responsavel, prioridade, prazo, origem e acompanhamento de status.
 - Administracao de usuarios e perfis de acesso.
 - Integracao Blip com webhook, sincronizacao de atendentes, tickets e historico.
 - Fila de analise OpenAI baseada nos processos e documentos publicados.

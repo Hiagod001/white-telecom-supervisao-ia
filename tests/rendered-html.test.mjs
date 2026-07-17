@@ -29,6 +29,9 @@ test("Uai Telecom product source includes the requested surfaces", async () => {
   assert.match(page, /chat-message-row/);
   assert.match(page, /Sincronizar agora/);
   assert.match(page, /Confirmar resolução/);
+  assert.match(page, /Tarefas/);
+  assert.match(page, /Nova tarefa/);
+  assert.match(page, /Em andamento/);
   assert.match(page, /Confirmar atribuição/);
   assert.match(page, /Ativar modo claro/);
   assert.match(page, /Cadastrar atendente/);

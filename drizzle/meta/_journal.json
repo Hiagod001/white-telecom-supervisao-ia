@@ -15,6 +15,13 @@
       "when": 1784040938217,
       "tag": "0001_outgoing_thanos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784150094691,
+      "tag": "0002_melted_wallow",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,7 @@ import {
   Headphones,
   LayoutDashboard,
   LineChart,
+  ListTodo,
   Lock,
   MessageCircle,
   LogOut,
@@ -80,6 +81,8 @@ type Sector = "Comercial" | "Atendimento" | "Retencao";
 type Channel = "WhatsApp" | "Chatbot" | "Audio" | "Ligacao" | "Multicanal" | "Blip Chat" | "Telegram" | "Messenger" | "Instagram" | "Chat";
 type ReviewStatus = "Pendente" | "Revisado" | "Contestado" | "Atribuido";
 type AlertStatus = "Aberto" | "Reconhecido" | "Resolvido";
+type TaskStatus = "Pendente" | "Em andamento" | "Resolvida" | "Cancelada";
+type TaskPriority = "Baixa" | "Media" | "Alta" | "Critica";
 
 type Conversation = {
   id: string;
@@ -122,6 +125,27 @@ type AlertItem = {
   evidence: string;
   conversationId: string;
 };
+
+type ManagedTask = {
+  id: number;
+  title: string;
+  description: string;
+  owner: string;
+  priority: TaskPriority;
+  status: TaskStatus;
+  dueDate: string | null;
+  sourceType: string;
+  sourceId: string | null;
+  sourceTitle: string;
+  conversationId: string | null;
+  resolutionNote: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+
+type TaskDraft = Pick<ManagedTask, "title" | "description" | "owner" | "priority" | "status" | "dueDate" | "sourceType" | "sourceId" | "sourceTitle" | "conversationId" | "resolutionNote">;
 
 type ProcessStep = {
   name: string;
@@ -431,6 +455,8 @@ const ptLabels: Record<string, string> = {
   Atribuido: "Atribuído",
   "Mes atual": "Mês atual",
   "Periodo customizado": "Período customizado",
+  Media: "Média",
+  Critica: "Crítica",
 };
 
 function ptLabel(value: string) {
@@ -604,6 +630,7 @@ const navItems = [
   { id: "processes", label: "Processos", icon: FileText, count: 0 },
   { id: "classifications", label: "Classificações", icon: Target, count: 0 },
   { id: "alerts", label: "Alertas", icon: Bell, count: 0 },
+  { id: "tasks", label: "Tarefas", icon: ListTodo, count: 0 },
 ];
 
 const adminNavItems = [
@@ -653,6 +680,8 @@ export default function Home() {
   const [reviewAssignmentNote, setReviewAssignmentNote] = useState("");
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<ManagedTask[]>([]);
+  const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([
     { id: 1, name: "Gabriel Coordenador", email: "gestor@uaitelecom.com.br", role: "Gestor", team: "Qualidade", status: "Ativo" },
     { id: 2, name: "Ana Operadora", email: "ana@uaitelecom.com.br", role: "Operador", team: "Suporte N1", status: "Ativo" },
@@ -714,6 +743,16 @@ export default function Home() {
       .then((payload) => {
         if (payload.processes?.length) setManagedProcesses(payload.processes);
       })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/tasks")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Tarefas indisponíveis.");
+        return response.json() as Promise<{ tasks?: ManagedTask[] }>;
+      })
+      .then((payload) => setTasks(payload.tasks ?? []))
       .catch(() => undefined);
   }, []);
 
@@ -896,10 +935,11 @@ export default function Home() {
       agents: attendantRanking.filter((row) => row.volume > 0).length,
       operator: filtered.filter((row) => row.attendant === "Ana Costa" && row.reviewStatus !== "Revisado").length,
       alerts: unreadNotifications.length,
+      tasks: tasks.filter((task) => task.status === "Pendente" || task.status === "Em andamento").length,
       processes: managedProcesses.filter((process) => process.status !== "Publicado").length,
       integrations: integrationConfigs.filter((integration) => integration.status !== "Configurado").length,
     }),
-    [attendantRanking, filtered, integrationConfigs, managedProcesses, unreadNotifications.length],
+    [attendantRanking, filtered, integrationConfigs, managedProcesses, tasks, unreadNotifications.length],
   );
   const activeTitle =
     activeView === "detail"
@@ -920,6 +960,7 @@ export default function Home() {
     processes: "Configure os processos que a IA utiliza para avaliar conversas",
     classifications: "Gerencie as classificações usadas pela IA",
     alerts: "Insights gerados pelo Auditor IA sobre a performance da equipe",
+    tasks: "Acompanhe responsáveis, prazos e andamento das ações da operação",
     integrations: "Conecte Blip, OpenAI e o servidor PBX",
     admin: "Usuários, perfis e acessos da Uai Telecom",
     operator: "Seu resumo de atendimentos, feedbacks e pendências",
@@ -984,6 +1025,27 @@ export default function Home() {
     }
     setActiveView("conversations");
     if (label.includes("Elegiveis")) setOnlyEligible(true);
+  };
+
+  const createTaskFromAlert = (alert: AlertItem) => {
+    const dueDate = new Date();
+    if (alert.due === "Amanha") dueDate.setDate(dueDate.getDate() + 1);
+    setTaskDraft({
+      title: `Acompanhar alerta: ${alert.type}`,
+      description: alert.evidence,
+      owner: alert.owner,
+      priority: alert.severity === "Critico" ? "Critica" : alert.severity === "Alto" ? "Alta" : alert.severity === "Medio" ? "Media" : "Baixa",
+      status: "Pendente",
+      dueDate: dueDate.toISOString().slice(0, 10),
+      sourceType: "Alerta",
+      sourceId: alert.id,
+      sourceTitle: alert.type,
+      conversationId: alert.conversationId,
+      resolutionNote: "",
+    });
+    setFocusedAlertId(alert.id);
+    setActiveView("tasks");
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
   };
 
   const simulateLoading = (state: "loading" | "error" | "empty") => {
@@ -1120,22 +1182,24 @@ export default function Home() {
             <p>{activeSubtitle[activeView] ?? "Supervisão operacional da Uai Telecom"}</p>
           </div>
           <div className="header-actions view-tools">
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={onlyEligible}
-                onChange={(event) => {
-                  const checked = event.target.checked;
-                  setOnlyEligible(checked);
-                  setPage(1);
-                  notify(
-                    checked ? "Filtro aplicado" : "Filtro removido",
-                    checked ? "Exibindo somente atendimentos elegíveis para avaliação." : "Todos os atendimentos voltaram a ser exibidos.",
-                  );
-                }}
-              />
-              Apenas elegíveis
-            </label>
+            {!['tasks', 'processes', 'classifications', 'integrations', 'admin'].includes(activeView) ? (
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={onlyEligible}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setOnlyEligible(checked);
+                    setPage(1);
+                    notify(
+                      checked ? "Filtro aplicado" : "Filtro removido",
+                      checked ? "Exibindo somente atendimentos elegíveis para avaliação." : "Todos os atendimentos voltaram a ser exibidos.",
+                    );
+                  }}
+                />
+                Apenas elegíveis
+              </label>
+            ) : null}
             <button className="icon-button" onClick={() => simulateLoading("loading")} title="Atualizar">
               <RefreshCw size={16} />
             </button>
@@ -1196,7 +1260,17 @@ export default function Home() {
             {activeView === "kpis" && <Kpis ranking={attendantRanking} rows={filtered} sector={operationalSector} />}
             {activeView === "operator" && <OperatorPanel rows={filtered.filter((row) => row.attendant === "Ana Costa")} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
             {activeView === "adherence" && <Adherence rows={filtered} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
-            {activeView === "alerts" && <AlertsCenter alerts={alerts} focusAlertId={focusedAlertId} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} onNotify={notify} />}
+            {activeView === "alerts" && <AlertsCenter alerts={alerts} focusAlertId={focusedAlertId} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} onCreateTask={createTaskFromAlert} onNotify={notify} />}
+            {activeView === "tasks" && (
+              <TasksWorkspace
+                tasks={tasks}
+                setTasks={setTasks}
+                initialDraft={taskDraft}
+                onDraftHandled={() => setTaskDraft(null)}
+                onOpenSource={(id) => { setSelectedId(id); setActiveView("detail"); }}
+                onNotify={notify}
+              />
+            )}
             {activeView === "ai" && (
               <AiAgent
                 rows={filtered}
@@ -2198,11 +2272,13 @@ function AlertsCenter({
   alerts,
   focusAlertId,
   onOpen,
+  onCreateTask,
   onNotify,
 }: {
   alerts: AlertItem[];
   focusAlertId: string | null;
   onOpen: (id: string) => void;
+  onCreateTask: (alert: AlertItem) => void;
   onNotify: (title: string, body: string) => void;
 }) {
   const [statusById, setStatusById] = useState<Record<string, AlertStatus>>({});
@@ -2210,9 +2286,8 @@ function AlertsCenter({
   const [severityFilter, setSeverityFilter] = useState("Todas severidades");
   const [ownerFilter, setOwnerFilter] = useState("Todos operadores");
   const [expandedAlertId, setExpandedAlertId] = useState<string | null>(focusAlertId);
-  const [alertAction, setAlertAction] = useState<{ kind: "resolve" | "task"; alert: AlertItem } | null>(null);
+  const [alertAction, setAlertAction] = useState<{ kind: "resolve"; alert: AlertItem } | null>(null);
   const [actionNote, setActionNote] = useState("");
-  const [taskOwner, setTaskOwner] = useState("Qualidade");
   const updateAlert = (alert: AlertItem, status: AlertStatus, note = alert.evidence) => {
     setStatusById((items) => ({ ...items, [alert.id]: status }));
     fetch("/api/actions", {
@@ -2225,16 +2300,7 @@ function AlertsCenter({
 
   const confirmAlertAction = () => {
     if (!alertAction || !actionNote.trim()) return;
-    if (alertAction.kind === "resolve") {
-      updateAlert(alertAction.alert, "Resolvido", actionNote.trim());
-    } else {
-      fetch("/api/actions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "create_coaching_task", targetType: "alert", targetId: alertAction.alert.id, note: `${taskOwner}: ${actionNote.trim()}` }),
-      }).catch(() => undefined);
-      onNotify("Tarefa criada", `Coaching atribuído para ${taskOwner}.`);
-    }
+    updateAlert(alertAction.alert, "Resolvido", actionNote.trim());
     setAlertAction(null);
     setActionNote("");
   };
@@ -2294,7 +2360,7 @@ function AlertsCenter({
             <div className="alert-actions">
               <button onClick={() => updateAlert(alert, "Reconhecido")}>Reconhecer</button>
               <button onClick={() => setAlertAction({ kind: "resolve", alert })}>Resolver</button>
-              <button onClick={() => setAlertAction({ kind: "task", alert })}>Criar tarefa</button>
+              <button onClick={() => onCreateTask(alert)}><ClipboardCheck size={15} /> Criar tarefa</button>
               <button onClick={() => onOpen(alert.conversationId)}>Abrir origem</button>
             </div>
           </div>
@@ -2304,14 +2370,220 @@ function AlertsCenter({
       </article>
       {alertAction ? (
         <div className="modal-backdrop" role="presentation" onClick={() => setAlertAction(null)}>
-          <section className="date-modal action-modal" role="dialog" aria-modal="true" aria-label={alertAction.kind === "resolve" ? "Resolver alerta" : "Criar tarefa"} onClick={(event) => event.stopPropagation()}>
-            <header><div><strong>{alertAction.kind === "resolve" ? "Resolver alerta" : "Criar tarefa de acompanhamento"}</strong><small>{alertAction.alert.type} - {alertAction.alert.evidence}</small></div><button className="icon-button" onClick={() => setAlertAction(null)} title="Fechar"><X size={17} /></button></header>
-            {alertAction.kind === "task" ? <label>Responsável<select value={taskOwner} onChange={(event) => setTaskOwner(event.target.value)}><option>Qualidade</option><option>Gestor Suporte</option><option>Comercial</option></select></label> : null}
-            <label>{alertAction.kind === "resolve" ? "Como este atendimento foi resolvido?" : "O que precisa ser acompanhado?"}<textarea value={actionNote} onChange={(event) => setActionNote(event.target.value)} placeholder={alertAction.kind === "resolve" ? "Descreva a tratativa, a confirmação com o cliente e o desfecho." : "Descreva a ação esperada, o motivo e o resultado desejado."} /></label>
-            <div className="form-actions"><button disabled={!actionNote.trim()} onClick={confirmAlertAction}>{alertAction.kind === "resolve" ? <CheckCircle2 size={16} /> : <ClipboardCheck size={16} />} {alertAction.kind === "resolve" ? "Confirmar resolução" : "Criar tarefa"}</button></div>
+          <section className="date-modal action-modal" role="dialog" aria-modal="true" aria-label="Resolver alerta" onClick={(event) => event.stopPropagation()}>
+            <header><div><strong>Resolver alerta</strong><small>{alertAction.alert.type} - {alertAction.alert.evidence}</small></div><button className="icon-button" onClick={() => setAlertAction(null)} title="Fechar"><X size={17} /></button></header>
+            <label>Como este atendimento foi resolvido?<textarea value={actionNote} onChange={(event) => setActionNote(event.target.value)} placeholder="Descreva a tratativa, a confirmação com o cliente e o desfecho." /></label>
+            <div className="form-actions"><button disabled={!actionNote.trim()} onClick={confirmAlertAction}><CheckCircle2 size={16} /> Confirmar resolução</button></div>
           </section>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function createEmptyTaskDraft(): TaskDraft {
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + 2);
+  return {
+    title: "",
+    description: "",
+    owner: "Qualidade",
+    priority: "Media",
+    status: "Pendente",
+    dueDate: dueDate.toISOString().slice(0, 10),
+    sourceType: "Manual",
+    sourceId: null,
+    sourceTitle: "",
+    conversationId: null,
+    resolutionNote: "",
+  };
+}
+
+function taskDateLabel(value: string | null) {
+  if (!value) return "Sem prazo";
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`));
+}
+
+function taskStatusClass(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, "-");
+}
+
+function TasksWorkspace({
+  tasks,
+  setTasks,
+  initialDraft,
+  onDraftHandled,
+  onOpenSource,
+  onNotify,
+}: {
+  tasks: ManagedTask[];
+  setTasks: Dispatch<SetStateAction<ManagedTask[]>>;
+  initialDraft: TaskDraft | null;
+  onDraftHandled: () => void;
+  onOpenSource: (id: string) => void;
+  onNotify: (title: string, body: string) => void;
+}) {
+  const [draft, setDraft] = useState<TaskDraft | null>(initialDraft);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Abertas");
+  const [ownerFilter, setOwnerFilter] = useState("Todos responsáveis");
+  const [saving, setSaving] = useState(false);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const openTasks = tasks.filter((task) => task.status === "Pendente" || task.status === "Em andamento");
+  const overdueTasks = openTasks.filter((task) => task.dueDate && task.dueDate < today);
+  const resolvedTasks = tasks.filter((task) => task.status === "Resolvida");
+  const owners = Array.from(new Set(["Qualidade", "Gestor Suporte", "Atendimento", "Comercial", ...tasks.map((task) => task.owner)]));
+  const visibleTasks = tasks.filter((task) => {
+    const normalizedSearch = search.trim().toLowerCase();
+    const matchesSearch = !normalizedSearch || `${task.title} ${task.description} ${task.owner} ${task.sourceTitle}`.toLowerCase().includes(normalizedSearch);
+    const matchesStatus = statusFilter === "Todas" || (statusFilter === "Abertas" ? task.status === "Pendente" || task.status === "Em andamento" : task.status === statusFilter);
+    const matchesOwner = ownerFilter === "Todos responsáveis" || task.owner === ownerFilter;
+    return matchesSearch && matchesStatus && matchesOwner;
+  });
+
+  const openTask = (task: ManagedTask) => {
+    setSelectedTaskId(task.id);
+    setDraft({
+      title: task.title,
+      description: task.description,
+      owner: task.owner,
+      priority: task.priority,
+      status: task.status,
+      dueDate: task.dueDate,
+      sourceType: task.sourceType,
+      sourceId: task.sourceId,
+      sourceTitle: task.sourceTitle,
+      conversationId: task.conversationId,
+      resolutionNote: task.resolutionNote,
+    });
+  };
+
+  const saveTask = async () => {
+    if (!draft || !draft.title.trim() || !draft.description.trim() || !draft.owner.trim()) {
+      onNotify("Dados incompletos", "Preencha título, descrição e responsável.");
+      return;
+    }
+    if (draft.status === "Resolvida" && !draft.resolutionNote.trim()) {
+      onNotify("Desfecho obrigatório", "Conte como a tarefa foi resolvida antes de concluir.");
+      return;
+    }
+
+    setSaving(true);
+    const editingId = selectedTaskId && selectedTaskId > 0 ? selectedTaskId : null;
+    const previousTasks = tasks;
+    const now = new Date().toISOString();
+    const optimisticTask: ManagedTask = editingId
+      ? { ...tasks.find((task) => task.id === editingId)!, ...draft, updatedAt: now, completedAt: draft.status === "Resolvida" ? now : null }
+      : { ...draft, id: -Date.now(), createdBy: "Hiago Nunes", createdAt: now, updatedAt: now, completedAt: draft.status === "Resolvida" ? now : null };
+
+    setTasks((current) => editingId ? current.map((task) => task.id === editingId ? optimisticTask : task) : [optimisticTask, ...current]);
+    try {
+      const response = await fetch("/api/tasks", {
+        method: editingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingId ? { id: editingId, ...draft } : draft),
+      });
+      const payload = await response.json() as { task?: ManagedTask; error?: string };
+      if (!response.ok || !payload.task) throw new Error(payload.error || "Não foi possível salvar a tarefa.");
+      setTasks((current) => current.map((task) => task.id === optimisticTask.id || task.id === editingId ? payload.task! : task));
+      setSelectedTaskId(payload.task.id);
+      setDraft({
+        title: payload.task.title,
+        description: payload.task.description,
+        owner: payload.task.owner,
+        priority: payload.task.priority,
+        status: payload.task.status,
+        dueDate: payload.task.dueDate,
+        sourceType: payload.task.sourceType,
+        sourceId: payload.task.sourceId,
+        sourceTitle: payload.task.sourceTitle,
+        conversationId: payload.task.conversationId,
+        resolutionNote: payload.task.resolutionNote,
+      });
+      onDraftHandled();
+      onNotify(editingId ? "Tarefa atualizada" : "Tarefa criada", editingId ? "As alterações e o status foram gravados." : "A tarefa já aparece no acompanhamento da equipe.");
+    } catch (error) {
+      setTasks(previousTasks);
+      onNotify("Não foi possível salvar", error instanceof Error ? error.message : "Verifique a conexão e tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="stack tasks-workspace">
+      <div className="task-summary-grid">
+        <MiniStat label="Tarefas abertas" value={openTasks.length.toString()} />
+        <MiniStat label="Em andamento" value={tasks.filter((task) => task.status === "Em andamento").length.toString()} />
+        <MiniStat label="Atrasadas" value={overdueTasks.length.toString()} />
+        <MiniStat label="Resolvidas" value={resolvedTasks.length.toString()} />
+      </div>
+
+      <div className="task-toolbar">
+        <label className="task-search"><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por tarefa, responsável ou origem" /></label>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filtrar tarefas por status">
+          <option>Abertas</option><option>Todas</option><option>Pendente</option><option>Em andamento</option><option>Resolvida</option><option>Cancelada</option>
+        </select>
+        <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} aria-label="Filtrar tarefas por responsável">
+          <option>Todos responsáveis</option>{owners.map((owner) => <option key={owner}>{owner}</option>)}
+        </select>
+        <button className="primary-task-button" onClick={() => { onDraftHandled(); setSelectedTaskId(null); setDraft(createEmptyTaskDraft()); }}><Plus size={17} /> Nova tarefa</button>
+      </div>
+
+      <div className="tasks-layout">
+        <article className="panel task-list-panel">
+          <PanelTitle icon={ListTodo} title="Acompanhamento" subtitle={`${visibleTasks.length} tarefa${visibleTasks.length === 1 ? "" : "s"} no filtro atual.`} />
+          <div className="task-list">
+            {visibleTasks.map((task) => (
+              <button key={task.id} className={`task-row ${selectedTaskId === task.id ? "active" : ""}`} onClick={() => openTask(task)}>
+                <span className={`task-row-icon status-${taskStatusClass(task.status)}`}><ClipboardCheck size={17} /></span>
+                <span className="task-row-copy">
+                  <strong>{task.title}</strong>
+                  <small>{task.sourceType === "Alerta" ? `Alerta: ${task.sourceTitle}` : "Criada manualmente"}</small>
+                  <span className="task-row-chips"><i className={`task-chip priority-${task.priority.toLowerCase()}`}>{ptLabel(task.priority)}</i><i className={`task-chip status-${taskStatusClass(task.status)}`}>{task.status}</i></span>
+                </span>
+                <span className="task-row-meta"><strong>{task.owner}</strong><small className={task.dueDate && task.dueDate < today && task.status !== "Resolvida" ? "overdue" : ""}>{taskDateLabel(task.dueDate)}</small></span>
+                <ChevronRight size={17} />
+              </button>
+            ))}
+            {!visibleTasks.length ? <div className="empty-tasks"><ClipboardCheck size={25} /><strong>Nenhuma tarefa neste filtro</strong><p>Crie uma tarefa ou ajuste os filtros acima.</p></div> : null}
+          </div>
+        </article>
+
+        <article className="panel task-editor-panel">
+          {draft ? (
+            <>
+              <div className="task-editor-header">
+                <PanelTitle icon={selectedTaskId ? ClipboardCheck : Plus} title={selectedTaskId ? "Detalhes da tarefa" : "Nova tarefa"} subtitle={draft.sourceType === "Alerta" ? "Os dados do alerta já foram trazidos para cá." : "Defina a ação, o responsável e o prazo."} />
+                <button className="icon-button" onClick={() => { onDraftHandled(); setDraft(null); setSelectedTaskId(null); }} title="Fechar"><X size={17} /></button>
+              </div>
+              {draft.sourceType === "Alerta" ? (
+                <div className="task-source-banner">
+                  <AlertTriangle size={18} />
+                  <span><strong>Origem: {draft.sourceTitle}</strong><small>{draft.sourceId}</small></span>
+                  {draft.conversationId ? <button onClick={() => onOpenSource(draft.conversationId!)}>Abrir atendimento</button> : null}
+                </div>
+              ) : null}
+              <div className="task-form-grid">
+                <label className="task-field-wide">Título<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Ex.: Retornar contato e validar resolução" /></label>
+                <label className="task-field-wide">Descrição<textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Descreva o que precisa ser feito e o resultado esperado." /></label>
+                <label>Responsável<select value={draft.owner} onChange={(event) => setDraft({ ...draft, owner: event.target.value })}>{owners.map((owner) => <option key={owner}>{owner}</option>)}</select></label>
+                <label>Prioridade<select value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value as TaskPriority })}><option value="Baixa">Baixa</option><option value="Media">Média</option><option value="Alta">Alta</option><option value="Critica">Crítica</option></select></label>
+                <label>Prazo<input type="date" value={draft.dueDate ?? ""} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value || null })} /></label>
+                <label>Status<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as TaskStatus })}><option>Pendente</option><option>Em andamento</option><option>Resolvida</option><option>Cancelada</option></select></label>
+                {draft.status === "Resolvida" ? <label className="task-field-wide">Como esta tarefa foi resolvida?<textarea value={draft.resolutionNote} onChange={(event) => setDraft({ ...draft, resolutionNote: event.target.value })} placeholder="Registre a ação executada e o resultado confirmado." /></label> : null}
+              </div>
+              <div className="task-form-actions">
+                <button disabled={saving} onClick={saveTask}>{saving ? <RefreshCw className="spin" size={17} /> : <CheckCircle2 size={17} />} {selectedTaskId ? "Salvar alterações" : "Criar tarefa"}</button>
+              </div>
+            </>
+          ) : (
+            <div className="task-editor-empty"><ListTodo size={30} /><strong>Selecione uma tarefa</strong><p>Abra um item da lista ou crie uma nova tarefa para começar.</p><button onClick={() => setDraft(createEmptyTaskDraft())}><Plus size={17} /> Nova tarefa</button></div>
+          )}
+        </article>
+      </div>
     </section>
   );
 }

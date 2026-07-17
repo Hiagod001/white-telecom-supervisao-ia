@@ -68,6 +68,25 @@ export const actionLogs = sqliteTable("action_logs", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const tasks = sqliteTable("tasks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  owner: text("owner").notNull(),
+  priority: text("priority").notNull().default("Media"),
+  status: text("status").notNull().default("Pendente"),
+  dueDate: text("due_date"),
+  sourceType: text("source_type").notNull().default("Manual"),
+  sourceId: text("source_id"),
+  sourceTitle: text("source_title").notNull().default(""),
+  conversationId: text("conversation_id"),
+  resolutionNote: text("resolution_note").notNull().default(""),
+  createdBy: text("created_by").notNull().default("Sistema"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  completedAt: text("completed_at"),
+});
+
 export const blipAttendants = sqliteTable("blip_attendants", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   identity: text("identity").notNull().unique(),

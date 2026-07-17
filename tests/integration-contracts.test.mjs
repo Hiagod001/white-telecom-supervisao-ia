@@ -59,3 +59,22 @@ test("administrator can list and create attendants without storing Blip secrets 
   assert.match(attendantsRoute, /crypto\.randomUUID/);
   assert.doesNotMatch(attendantsRoute, /BLIP_AUTH_KEY/);
 });
+
+test("task workflow persists alert-linked work and status changes", async () => {
+  const [taskRoute, schema, migration, page] = await Promise.all([
+    readFile(new URL("../app/api/tasks/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0002_melted_wallow.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(taskRoute, /export async function GET/);
+  assert.match(taskRoute, /export async function POST/);
+  assert.match(taskRoute, /export async function PATCH/);
+  assert.match(taskRoute, /Informe como a tarefa foi resolvida/);
+  assert.match(schema, /export const tasks = sqliteTable\("tasks"/);
+  assert.match(migration, /CREATE TABLE `tasks`/);
+  assert.match(page, /function TasksWorkspace/);
+  assert.match(page, /onCreateTask={createTaskFromAlert}/);
+  assert.match(page, /Acompanhe responsáveis, prazos e andamento/);
+});
