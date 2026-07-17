@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { blipMessages, blipTickets, conversationAnalyses } from "../../../../db/schema";
 import { inferSector } from "../../../../lib/blip-storage";
+import { requireAuth } from "../../../../lib/auth";
 
 function resultValue(resultJson: string) {
   try {
@@ -18,6 +19,8 @@ function maskIdentity(identity: string) {
 }
 
 export async function GET(request: Request) {
+  const auth = await requireAuth(request);
+  if (auth.response || !auth.user) return auth.response;
   try {
     const limit = Math.min(200, Math.max(1, Number(new URL(request.url).searchParams.get("limit") ?? 100)));
     const db = getDb();
@@ -30,6 +33,11 @@ export async function GET(request: Request) {
 
     const conversations = [];
     for (const row of rows) {
+      if (auth.user.role === "Operador") {
+        const identityMatch = Boolean(auth.user.attendantIdentity) && row.ticket.attendantIdentity === auth.user.attendantIdentity;
+        const nameMatch = row.ticket.attendantName.trim().toLowerCase() === auth.user.name.trim().toLowerCase();
+        if (!identityMatch && !nameMatch) continue;
+      }
       const analysis = resultValue(row.analysis?.resultJson ?? "{}");
       const messageCount = await db
         .select({ id: blipMessages.id })

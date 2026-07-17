@@ -25,7 +25,10 @@ export async function POST(request: Request) {
   try {
     const expectedSecret = getWebhookSecret();
     const receivedSecret = request.headers.get("x-uai-blip-secret") ?? "";
-    if (expectedSecret && receivedSecret !== expectedSecret) {
+    if (!expectedSecret) {
+      return Response.json({ error: "Webhook Blip nao configurado." }, { status: 503 });
+    }
+    if (receivedSecret !== expectedSecret) {
       return Response.json({ error: "Assinatura do webhook invalida." }, { status: 401 });
     }
 

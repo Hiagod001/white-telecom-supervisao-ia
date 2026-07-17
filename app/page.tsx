@@ -165,6 +165,23 @@ type ManagedUser = {
   role: UserRole;
   team: string;
   status: "Ativo" | "Bloqueado";
+  attendantIdentity: string;
+  mustChangePassword: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AuthUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: UserRole;
+  team: string;
+  status: string;
+  attendantIdentity: string;
+  mustChangePassword: boolean;
+  permissions: string[];
 };
 
 type ManagedAttendant = {
@@ -638,6 +655,8 @@ const adminNavItems = [
   { id: "admin", label: "Administração", icon: Settings, count: 0 },
 ];
 
+const managerNavItems = navItems.filter((item) => !["processes", "classifications"].includes(item.id));
+
 const operatorNavItems = [
   { id: "operator", label: "Meu painel", icon: UserCheck, count: 0 },
   { id: "conversations", label: "Meus atendimentos", icon: MessageCircle, count: 0 },
@@ -656,10 +675,26 @@ export default function Home() {
     [demoConversations, importedConversations, reviewOverrides],
   );
   const alerts = useMemo(() => buildAlerts(conversations), [conversations]);
-  const [activeView, setActiveView] = useState("overview");
+  const [requestedView, setActiveView] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [userRole, setUserRole] = useState<UserRole>("Gestor");
+  const [authStatus, setAuthStatus] = useState<"loading" | "authenticated" | "unauthenticated">("loading");
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const userRole: UserRole = currentUser?.role ?? "Gestor";
+  const allowedViews = userRole === "Administrador"
+    ? [...navItems.map((item) => item.id), ...adminNavItems.map((item) => item.id), "detail", "operator"]
+    : userRole === "Gestor"
+      ? [...managerNavItems.map((item) => item.id), "detail"]
+      : [...operatorNavItems.map((item) => item.id), "detail"];
+  const roleHome = userRole === "Administrador" ? "overview" : userRole === "Operador" ? "operator" : "overview";
+  const activeView = allowedViews.includes(requestedView) ? requestedView : roleHome;
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [period, setPeriod] = useState("Mes atual");
   const [sector, setSector] = useState("Atendimento");
@@ -682,10 +717,7 @@ export default function Home() {
   const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<ManagedTask[]>([]);
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
-  const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([
-    { id: 1, name: "Gabriel Coordenador", email: "gestor@uaitelecom.com.br", role: "Gestor", team: "Qualidade", status: "Ativo" },
-    { id: 2, name: "Ana Operadora", email: "ana@uaitelecom.com.br", role: "Operador", team: "Suporte N1", status: "Ativo" },
-  ]);
+  const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
   const [managedAttendants, setManagedAttendants] = useState<ManagedAttendant[]>([
     { id: 1, identity: "manual:ana", fullName: "Ana Costa", email: "ana@uaitelecom.com.br", team: "Atendimento", status: "Ativo", source: "Manual" },
     { id: 2, identity: "manual:bruno", fullName: "Bruno Lima", email: "bruno@uaitelecom.com.br", team: "Comercial", status: "Ativo", source: "Manual" },
@@ -713,6 +745,23 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    fetch("/api/auth/session", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("unauthenticated");
+        return response.json() as Promise<{ user: AuthUser }>;
+      })
+      .then((payload) => {
+        setCurrentUser(payload.user);
+        setAuthStatus("authenticated");
+        if (payload.user.role === "Operador") setSector("Atendimento");
+      })
+      .catch(() => {
+        setCurrentUser(null);
+        setAuthStatus("unauthenticated");
+      });
+  }, []);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const view = params.get("view");
     const query = params.get("q");
@@ -735,6 +784,7 @@ export default function Home() {
   }, [theme]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated" || userRole === "Operador") return;
     fetch("/api/admin/processes")
       .then(async (response) => {
         if (!response.ok) throw new Error("Processos persistidos indisponiveis.");
@@ -744,9 +794,10 @@ export default function Home() {
         if (payload.processes?.length) setManagedProcesses(payload.processes);
       })
       .catch(() => undefined);
-  }, []);
+  }, [authStatus, userRole]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated") return;
     fetch("/api/tasks")
       .then(async (response) => {
         if (!response.ok) throw new Error("Tarefas indisponíveis.");
@@ -754,9 +805,10 @@ export default function Home() {
       })
       .then((payload) => setTasks(payload.tasks ?? []))
       .catch(() => undefined);
-  }, []);
+  }, [authStatus]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated") return;
     const loadImported = () => {
       fetch("/api/conversations/imported?limit=100")
         .then(async (response) => {
@@ -777,9 +829,10 @@ export default function Home() {
     loadImported();
     window.addEventListener("blip-synchronized", loadImported);
     return () => window.removeEventListener("blip-synchronized", loadImported);
-  }, []);
+  }, [authStatus]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated" || userRole === "Operador") return;
     const loadAttendants = () => {
       fetch("/api/admin/attendants")
         .then(async (response) => {
@@ -794,7 +847,18 @@ export default function Home() {
     loadAttendants();
     window.addEventListener("blip-synchronized", loadAttendants);
     return () => window.removeEventListener("blip-synchronized", loadAttendants);
-  }, []);
+  }, [authStatus, userRole]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || userRole !== "Administrador") return;
+    fetch("/api/admin/users", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Usuarios indisponiveis.");
+        return response.json() as Promise<{ users?: ManagedUser[] }>;
+      })
+      .then((payload) => setManagedUsers(payload.users ?? []))
+      .catch(() => undefined);
+  }, [authStatus, userRole]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -818,7 +882,7 @@ export default function Home() {
       const matchesSector = sector === "Todos" || conversation.sector === sector;
       const matchesChannel = channel === "Todos" || conversation.channel === channel;
       const matchesEligible = !onlyEligible || conversation.eligible;
-      const matchesRole = userRole !== "Operador" || conversation.attendant === "Ana Costa";
+      const matchesRole = userRole !== "Operador" || conversation.attendant.trim().toLowerCase() === currentUser?.name.trim().toLowerCase();
       const query = search.toLowerCase().trim();
       const matchesSearch =
         !query ||
@@ -835,7 +899,7 @@ export default function Home() {
           .includes(query);
       return matchesPeriod && matchesSector && matchesChannel && matchesEligible && matchesRole && matchesSearch;
     });
-  }, [channel, conversations, onlyEligible, period, search, sector, userRole]);
+  }, [channel, conversations, currentUser?.name, onlyEligible, period, search, sector, userRole]);
 
   const selected = filtered.find((conversation) => conversation.id === selectedId) ?? filtered[0] ?? conversations[0];
 
@@ -924,7 +988,7 @@ export default function Home() {
   const operationalSector: Sector = sector === "Comercial" ? "Comercial" : sector === "Retencao" ? "Retencao" : "Atendimento";
   const peopleLabel = operationalSector === "Comercial" ? "Vendedores" : "Atendentes";
   const navLabel = (id: string, fallback: string) => id === "agents" ? peopleLabel : fallback;
-  const displayedNavItems = userRole === "Operador" ? operatorNavItems : navItems;
+  const displayedNavItems = userRole === "Operador" ? operatorNavItems : userRole === "Gestor" ? managerNavItems : navItems;
   const navCounts = useMemo(
     () => ({
       conversations: filtered.filter((row) => row.reviewStatus === "Pendente").length,
@@ -979,15 +1043,68 @@ export default function Home() {
     }).catch(() => undefined);
   };
 
-  const changeRole = (nextRole: UserRole) => {
-    setUserRole(nextRole);
+  const refreshCurrentUser = async () => {
+    const response = await fetch("/api/auth/session", { cache: "no-store" });
+    if (!response.ok) throw new Error("Sessão indisponível.");
+    const payload = await response.json() as { user: AuthUser };
+    setCurrentUser(payload.user);
+    setAuthStatus("authenticated");
+    setActiveView(payload.user.role === "Operador" ? "operator" : "overview");
+    if (payload.user.role === "Operador") setSector("Atendimento");
+  };
+
+  const submitLogin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Não foi possível entrar.");
+      await refreshCurrentUser();
+      setLoginPassword("");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Não foi possível entrar.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const submitPasswordChange = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const response = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Não foi possível alterar a senha.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setPasswordDialogOpen(false);
+      await refreshCurrentUser();
+      notify("Senha alterada", "Sua nova senha já está protegendo a conta.");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Não foi possível alterar a senha.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    setCurrentUser(null);
+    setAuthStatus("unauthenticated");
     setUserMenuOpen(false);
-    setSearch("");
-    setOnlyEligible(false);
-    setChannel("Todos");
-    if (nextRole === "Operador") setSector("Atendimento");
-    setActiveView(nextRole === "Operador" ? "operator" : nextRole === "Administrador" ? "admin" : "overview");
-    notify("Perfil alterado", nextRole === "Operador" ? "Mostrando apenas o painel e os atendimentos de Ana Costa." : `Visualização de ${nextRole} ativada.`);
+    setManagedUsers([]);
+    setTasks([]);
   };
 
   const assignReview = () => {
@@ -1052,6 +1169,48 @@ export default function Home() {
     setLoadingState(state);
     window.setTimeout(() => setLoadingState("ready"), 950);
   };
+
+  if (authStatus === "loading") {
+    return (
+      <main className={`auth-shell theme-${theme}`}>
+        <section className="auth-loading" role="status"><span className="brand-mark">U</span><p>Verificando acesso seguro...</p></section>
+      </main>
+    );
+  }
+
+  if (authStatus === "unauthenticated" || !currentUser) {
+    return (
+      <main className={`auth-shell theme-${theme}`}>
+        <button className="auth-theme-toggle icon-button" onClick={() => setTheme((value) => value === "dark" ? "light" : "dark")} title="Alternar tema">
+          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+        <section className="login-panel">
+          <header><span className="brand-mark">U</span><div><strong>Uai Telecom</strong><small>Supervisão IA</small></div></header>
+          <div className="login-heading"><h1>Acesse sua conta</h1><p>Entre com o usuário cadastrado pelo administrador.</p></div>
+          <form onSubmit={submitLogin}>
+            <label>E-mail<input type="email" value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} autoComplete="username" autoFocus required /></label>
+            <label>Senha<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="current-password" required /></label>
+            {authError ? <p className="auth-error" role="alert"><AlertTriangle size={16} /> {authError}</p> : null}
+            <button className="primary-button login-submit" type="submit" disabled={authBusy}>{authBusy ? "Entrando..." : "Entrar"}</button>
+          </form>
+          <footer><ShieldCheck size={16} /><span>Sessão protegida e acesso controlado por perfil.</span></footer>
+        </section>
+      </main>
+    );
+  }
+
+  if (currentUser.mustChangePassword) {
+    return (
+      <main className={`auth-shell theme-${theme}`}>
+        <section className="login-panel password-panel">
+          <header><span className="brand-mark"><Lock size={19} /></span><div><strong>Proteja sua conta</strong><small>Primeiro acesso</small></div></header>
+          <div className="login-heading"><h1>Crie uma nova senha</h1><p>A senha temporária deve ser substituída antes de acessar o sistema.</p></div>
+          <PasswordForm currentPassword={currentPassword} newPassword={newPassword} setCurrentPassword={setCurrentPassword} setNewPassword={setNewPassword} error={authError} busy={authBusy} onSubmit={submitPasswordChange} />
+          <button className="text-button" onClick={logout}><LogOut size={16} /> Sair</button>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className={`app-shell theme-${theme} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -1120,20 +1279,17 @@ export default function Home() {
           </button>
           <button className="sidebar-user" onClick={() => setUserMenuOpen((open) => !open)} aria-label="Menu do usuário">
             <span className="avatar">{userRole === "Operador" ? "OP" : userRole === "Administrador" ? "AD" : "GT"}</span>
-            <span><strong>Hiago Nunes</strong><small>{userRole}</small></span>
+            <span><strong>{currentUser.name}</strong><small>{userRole}</small></span>
             <ChevronRight size={16} />
           </button>
           {userMenuOpen ? (
             <div className="popover sidebar-user-popover">
-              <strong>Visualização atual</strong>
-              <select value={userRole} onChange={(event) => changeRole(event.target.value as UserRole)}>
-                <option>Administrador</option>
-                <option>Gestor</option>
-                <option>Operador</option>
-              </select>
-              <button onClick={() => { setActiveView("operator"); setUserMenuOpen(false); }}>Meu resumo</button>
+              <strong>{currentUser.email}</strong>
+              <small>{currentUser.team}</small>
+              {userRole === "Operador" ? <button onClick={() => { setActiveView("operator"); setUserMenuOpen(false); }}>Meu resumo</button> : null}
               {userRole === "Administrador" ? <button onClick={() => { setActiveView("admin"); setUserMenuOpen(false); }}>Administração</button> : null}
-              <button onClick={() => notify("Sessão encerrada", "O fluxo de saída foi validado. A autenticação real será conectada no deploy.")}><LogOut size={16} /> Sair</button>
+              <button onClick={() => { setPasswordDialogOpen(true); setUserMenuOpen(false); }}><Lock size={16} /> Alterar senha</button>
+              <button onClick={logout}><LogOut size={16} /> Sair</button>
             </div>
           ) : null}
         </div>
@@ -1258,7 +1414,7 @@ export default function Home() {
             {activeView === "recurrence" && <Recurrence rows={filtered} sector={operationalSector} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
             {activeView === "agents" && <Agents ranking={attendantRanking} rows={filtered} sector={operationalSector} />}
             {activeView === "kpis" && <Kpis ranking={attendantRanking} rows={filtered} sector={operationalSector} />}
-            {activeView === "operator" && <OperatorPanel rows={filtered.filter((row) => row.attendant === "Ana Costa")} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
+            {activeView === "operator" && <OperatorPanel rows={filtered.filter((row) => row.attendant.trim().toLowerCase() === currentUser.name.trim().toLowerCase())} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
             {activeView === "adherence" && <Adherence rows={filtered} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} />}
             {activeView === "alerts" && <AlertsCenter alerts={alerts} focusAlertId={focusedAlertId} onOpen={(id) => { setSelectedId(id); setActiveView("detail"); }} onCreateTask={createTaskFromAlert} onNotify={notify} />}
             {activeView === "tasks" && (
@@ -1296,6 +1452,14 @@ export default function Home() {
             )}
           </div>
         )}
+        {passwordDialogOpen ? (
+          <div className="modal-backdrop" role="presentation" onClick={() => setPasswordDialogOpen(false)}>
+            <section className="date-modal action-modal password-modal" role="dialog" aria-modal="true" aria-label="Alterar senha" onClick={(event) => event.stopPropagation()}>
+              <header><div><strong>Alterar senha</strong><small>Use uma senha exclusiva para este sistema.</small></div><button className="icon-button" onClick={() => setPasswordDialogOpen(false)} title="Fechar"><X size={17} /></button></header>
+              <PasswordForm currentPassword={currentPassword} newPassword={newPassword} setCurrentPassword={setCurrentPassword} setNewPassword={setNewPassword} error={authError} busy={authBusy} onSubmit={submitPasswordChange} />
+            </section>
+          </div>
+        ) : null}
         {customPeriodOpen ? (
           <div className="modal-backdrop" role="presentation" onClick={() => setCustomPeriodOpen(false)}>
             <section className="date-modal" role="dialog" aria-modal="true" aria-label="Período customizado" onClick={(event) => event.stopPropagation()}>
@@ -1346,6 +1510,34 @@ export default function Home() {
         ) : null}
       </section>
     </main>
+  );
+}
+
+function PasswordForm({
+  currentPassword,
+  newPassword,
+  setCurrentPassword,
+  setNewPassword,
+  error,
+  busy,
+  onSubmit,
+}: {
+  currentPassword: string;
+  newPassword: string;
+  setCurrentPassword: Dispatch<SetStateAction<string>>;
+  setNewPassword: Dispatch<SetStateAction<string>>;
+  error: string;
+  busy: boolean;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="password-form" onSubmit={onSubmit}>
+      <label>Senha atual<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" required /></label>
+      <label>Nova senha<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" minLength={12} required /></label>
+      <p className="password-rule">Mínimo de 12 caracteres, com maiúscula, minúscula, número e símbolo.</p>
+      {error ? <p className="auth-error" role="alert"><AlertTriangle size={16} /> {error}</p> : null}
+      <button className="primary-button" type="submit" disabled={busy}>{busy ? "Salvando..." : "Salvar nova senha"}</button>
+    </form>
   );
 }
 
@@ -3377,7 +3569,10 @@ function Admin({
     role: "Operador" as UserRole,
     team: "Suporte N1",
     password: "",
+    attendantIdentity: "",
   });
+  const [resetUserId, setResetUserId] = useState<number | null>(null);
+  const [temporaryPassword, setTemporaryPassword] = useState("");
   const [draftAttendant, setDraftAttendant] = useState({ fullName: "", email: "", team: "Atendimento" });
   const [customTeam, setCustomTeam] = useState("");
   const [extraTeams, setExtraTeams] = useState<string[]>([]);
@@ -3391,27 +3586,49 @@ function Admin({
     ...attendants.map((attendant) => attendant.team),
   ].filter(Boolean)));
 
-  const saveUser = () => {
-    if (!draftUser.name.trim() || !draftUser.email.trim() || draftUser.password.length < 6) {
-      onNotify("Usuário incompleto", "Informe nome, e-mail e senha com pelo menos 6 caracteres.");
+  const saveUser = async () => {
+    if (!draftUser.name.trim() || !draftUser.email.trim() || draftUser.password.length < 12) {
+      onNotify("Usuário incompleto", "Informe nome, e-mail e uma senha temporária forte com pelo menos 12 caracteres.");
       return;
     }
-    const created: ManagedUser = {
-      id: Date.now(),
-      name: draftUser.name,
-      email: draftUser.email,
-      role: draftUser.role,
-      team: draftUser.team,
-      status: "Ativo",
-    };
-    setUsers((items) => [created, ...items]);
-    fetch("/api/admin/users", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(draftUser),
-    }).catch(() => undefined);
-    onNotify("Usuário criado", `${created.name} pode acessar como ${created.role}.`);
-    setDraftUser({ name: "", email: "", role: "Operador", team: "Suporte N1", password: "" });
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draftUser),
+      });
+      const payload = await response.json() as { user?: ManagedUser; error?: string };
+      if (!response.ok || !payload.user) throw new Error(payload.error ?? "Não foi possível criar o usuário.");
+      setUsers((items) => [payload.user!, ...items]);
+      onNotify("Usuário criado", `${payload.user.name} receberá a troca obrigatória de senha no primeiro acesso.`);
+      setDraftUser({ name: "", email: "", role: "Operador", team: "Suporte N1", password: "", attendantIdentity: "" });
+    } catch (error) {
+      onNotify("Usuário não criado", error instanceof Error ? error.message : "Falha inesperada.");
+    }
+  };
+
+  const updateUser = async (id: number, changes: Record<string, string>) => {
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...changes }),
+      });
+      const payload = await response.json() as { user?: ManagedUser; error?: string };
+      if (!response.ok || !payload.user) throw new Error(payload.error ?? "Não foi possível atualizar o usuário.");
+      const updated = payload.user;
+      setUsers((items) => items.map((user) => user.id === id ? updated : user));
+      onNotify("Acesso atualizado", `${updated.name}: ${updated.role}, ${updated.status}.`);
+      setResetUserId(null);
+      setTemporaryPassword("");
+    } catch (error) {
+      onNotify("Acesso não atualizado", error instanceof Error ? error.message : "Falha inesperada.");
+    }
+  };
+
+  const generateTemporaryPassword = () => {
+    const generated = `Uai!${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}Aa1`;
+    setTemporaryPassword(generated);
   };
 
   const markConfigured = (provider: IntegrationConfig["provider"]) => {
@@ -3461,7 +3678,8 @@ function Admin({
           <label>Email<input value={draftUser.email} onChange={(event) => setDraftUser((current) => ({ ...current, email: event.target.value }))} placeholder="email@uaitelecom.com.br" /></label>
           <label>Perfil<select value={draftUser.role} onChange={(event) => setDraftUser((current) => ({ ...current, role: event.target.value as UserRole }))}><option>Administrador</option><option>Gestor</option><option>Operador</option></select></label>
           <label>Equipe<select value={draftUser.team} onChange={(event) => setDraftUser((current) => ({ ...current, team: event.target.value }))}>{teamOptions.map((team) => <option key={team}>{team}</option>)}</select></label>
-          <label>Senha<input type="password" value={draftUser.password} onChange={(event) => setDraftUser((current) => ({ ...current, password: event.target.value }))} placeholder="Mínimo de 6 caracteres" /></label>
+          <label>Senha temporária<input type="password" value={draftUser.password} onChange={(event) => setDraftUser((current) => ({ ...current, password: event.target.value }))} placeholder="12+ caracteres, número e símbolo" /></label>
+          <label>Atendente vinculado<select value={draftUser.attendantIdentity} onChange={(event) => setDraftUser((current) => ({ ...current, attendantIdentity: event.target.value }))}><option value="">Não vinculado</option>{attendants.map((attendant) => <option key={attendant.identity} value={attendant.identity}>{attendant.fullName} - {attendant.team}</option>)}</select></label>
           <div className="form-actions">
             <button onClick={saveUser}>Criar usuário</button>
           </div>
@@ -3499,10 +3717,22 @@ function Admin({
           <PanelTitle icon={Users} title="Usuários cadastrados" subtitle="Contas de acesso separadas dos atendentes sincronizados pela Blip." />
           <div className="cards-list">
             {users.map((user) => (
-              <div className="case-card" key={user.id}>
-                <span><strong>{user.name}</strong><small>{user.email}</small></span>
-                <span>{user.role}<small>{user.team}</small></span>
-                <span className="status cumpriu">{user.status}</span>
+              <div className="case-card user-access-card" key={user.id}>
+                <span><strong>{user.name}</strong><small>{user.email}</small><small>{user.lastLoginAt ? `Último acesso: ${new Date(user.lastLoginAt).toLocaleString("pt-BR")}` : "Nunca acessou"}</small></span>
+                <label>Perfil<select value={user.role} onChange={(event) => updateUser(user.id, { role: event.target.value })}><option>Administrador</option><option>Gestor</option><option>Operador</option></select></label>
+                <label>Equipe<select value={user.team} onChange={(event) => updateUser(user.id, { team: event.target.value })}>{teamOptions.map((team) => <option key={team}>{team}</option>)}</select></label>
+                <span className={user.status === "Ativo" ? "status cumpriu" : "status nao-cumpriu"}>{user.status}<small>{user.mustChangePassword ? "Troca de senha pendente" : "Senha confirmada"}</small></span>
+                <div className="user-access-actions">
+                  <button onClick={() => updateUser(user.id, { status: user.status === "Ativo" ? "Bloqueado" : "Ativo" })}>{user.status === "Ativo" ? "Bloquear" : "Reativar"}</button>
+                  <button onClick={() => { setResetUserId(resetUserId === user.id ? null : user.id); setTemporaryPassword(""); }}><Lock size={15} /> Redefinir senha</button>
+                </div>
+                {resetUserId === user.id ? (
+                  <div className="user-password-reset">
+                    <input value={temporaryPassword} onChange={(event) => setTemporaryPassword(event.target.value)} placeholder="Nova senha temporária" />
+                    <button onClick={generateTemporaryPassword}>Gerar</button>
+                    <button disabled={!temporaryPassword} onClick={() => updateUser(user.id, { temporaryPassword })}>Aplicar</button>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

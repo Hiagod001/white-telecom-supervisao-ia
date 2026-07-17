@@ -1,6 +1,7 @@
 import { asc } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { blipAttendants } from "../../../../db/schema";
+import { requireAuth } from "../../../../lib/auth";
 
 function routeError(error: unknown) {
   const message = error instanceof Error ? error.message : "Falha inesperada.";
@@ -29,7 +30,9 @@ function attendantView(row: typeof blipAttendants.$inferSelect) {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await requireAuth(request, ["Administrador", "Gestor"]);
+  if (auth.response) return auth.response;
   try {
     const db = getDb();
     const rows = await db.select().from(blipAttendants).orderBy(asc(blipAttendants.fullName)).limit(500);
@@ -42,6 +45,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAuth(request, ["Administrador"]);
+  if (auth.response) return auth.response;
   try {
     const payload = (await request.json()) as { fullName?: string; email?: string; team?: string };
     const fullName = payload.fullName?.trim() ?? "";

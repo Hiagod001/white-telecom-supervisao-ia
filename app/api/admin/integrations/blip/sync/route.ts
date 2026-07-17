@@ -3,6 +3,7 @@ import { getDb } from "../../../../../../db";
 import { blipSyncRuns } from "../../../../../../db/schema";
 import { getBlipThread, hasOpenAiKey, listBlipAttendants, listBlipTickets } from "../../../../../../lib/blip";
 import { upsertBlipAttendant, upsertBlipMessage, upsertBlipTicket } from "../../../../../../lib/blip-storage";
+import { requireAuth } from "../../../../../../lib/auth";
 
 function routeError(error: unknown) {
   const message = error instanceof Error ? error.message : "Unexpected error";
@@ -16,6 +17,8 @@ function routeError(error: unknown) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAuth(request, ["Administrador"]);
+  if (auth.response) return auth.response;
   const db = getDb();
   let runId = 0;
   try {

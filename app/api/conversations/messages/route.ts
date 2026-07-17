@@ -1,13 +1,24 @@
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { blipMessages } from "../../../../db/schema";
+import { blipMessages, blipTickets } from "../../../../db/schema";
+import { requireAuth } from "../../../../lib/auth";
 
 export async function GET(request: Request) {
+  const auth = await requireAuth(request);
+  if (auth.response || !auth.user) return auth.response;
   try {
     const ticketId = new URL(request.url).searchParams.get("ticketId")?.trim() ?? "";
     if (!ticketId) return Response.json({ error: "ticketId e obrigatorio." }, { status: 400 });
 
     const db = getDb();
+    if (auth.user.role === "Operador") {
+      const [ticket] = await db.select().from(blipTickets).where(eq(blipTickets.externalId, ticketId)).limit(1);
+      const identityMatch = Boolean(auth.user.attendantIdentity) && ticket?.attendantIdentity === auth.user.attendantIdentity;
+      const nameMatch = ticket?.attendantName.trim().toLowerCase() === auth.user.name.trim().toLowerCase();
+      if (!ticket || !identityMatch && !nameMatch) {
+        return Response.json({ error: "Atendimento nao permitido para este usuario." }, { status: 403 });
+      }
+    }
     const messages = await db
       .select({
         id: blipMessages.externalId,

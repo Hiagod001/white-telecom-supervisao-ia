@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { processDefinitions, processDocuments } from "../../../../db/schema";
+import { requireAuth } from "../../../../lib/auth";
 
 function routeError(error: unknown) {
   const message = error instanceof Error ? error.message : "Unexpected error";
@@ -13,7 +14,9 @@ function routeError(error: unknown) {
   return message;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await requireAuth(request, ["Administrador", "Gestor"]);
+  if (auth.response) return auth.response;
   try {
     const db = getDb();
     const [rows, documents] = await Promise.all([
@@ -35,6 +38,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAuth(request, ["Administrador"]);
+  if (auth.response) return auth.response;
   try {
     const payload = (await request.json()) as {
       name?: string;
@@ -87,6 +92,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const auth = await requireAuth(request, ["Administrador"]);
+  if (auth.response) return auth.response;
   try {
     const payload = (await request.json()) as {
       id?: number;

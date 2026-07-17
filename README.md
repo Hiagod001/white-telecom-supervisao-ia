@@ -17,6 +17,18 @@ Painel operacional para supervisao de atendimentos da Uai Telecom. A aplicacao c
 
 Os dados exibidos atualmente sao demonstrativos. As credenciais das integracoes devem ser informadas somente no ambiente de implantacao.
 
+## Autenticacao e permissoes
+
+O acesso ao painel exige uma conta ativa. As senhas usam PBKDF2-SHA256 com salt individual, as sessoes expiram em 12 horas e ficam em cookie `HttpOnly` com `SameSite=Lax` (e `Secure` quando servido em HTTPS). Cinco falhas de login em 15 minutos bloqueiam temporariamente novas tentativas para o mesmo e-mail e IP.
+
+Perfis disponiveis:
+
+- **Administrador:** usuarios, integracoes, processos e toda a operacao.
+- **Gestor:** indicadores, atendimentos, alertas, processos e tarefas da equipe, sem configuracoes administrativas.
+- **Operador:** apenas o proprio painel, atendimentos vinculados e tarefas atribuidas.
+
+O primeiro administrador e criado uma unica vez por `POST /api/auth/bootstrap`, usando o cabecalho `x-bootstrap-token` com o valor temporario de `AUTH_BOOTSTRAP_TOKEN`. A senha inicial deve ser trocada no primeiro acesso. Depois da inicializacao, remova essa variavel do ambiente.
+
 ## Integracao Blip
 
 Variaveis obrigatorias no servidor:

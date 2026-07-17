@@ -1,6 +1,9 @@
 import { getBlipConfig, hasOpenAiKey, listBlipAttendants } from "../../../../../../lib/blip";
+import { requireAuth } from "../../../../../../lib/auth";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const auth = await requireAuth(request, ["Administrador"]);
+  if (auth.response) return auth.response;
   try {
     const config = getBlipConfig();
     const attendants = await listBlipAttendants();

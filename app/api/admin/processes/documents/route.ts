@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { processDefinitions, processDocuments } from "../../../../../db/schema";
+import { requireAuth } from "../../../../../lib/auth";
 
 type FileEnv = { PROCESS_FILES?: R2Bucket };
 
@@ -29,6 +30,8 @@ function safeName(name: string) {
 }
 
 export async function GET(request: Request) {
+  const auth = await requireAuth(request, ["Administrador", "Gestor"]);
+  if (auth.response) return auth.response;
   try {
     const processId = Number(new URL(request.url).searchParams.get("processId"));
     if (!processId) {
@@ -47,6 +50,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAuth(request, ["Administrador"]);
+  if (auth.response) return auth.response;
   try {
     const form = await request.formData();
     const processId = Number(form.get("processId"));
@@ -107,6 +112,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const auth = await requireAuth(request, ["Administrador"]);
+  if (auth.response) return auth.response;
   try {
     const url = new URL(request.url);
     const id = Number(url.searchParams.get("id"));

@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { tasks } from "../../../db/schema";
+import { requireAuth } from "../../../lib/auth";
 
 type TaskStatus = "Pendente" | "Em andamento" | "Resolvida" | "Cancelada";
 type TaskPriority = "Baixa" | "Media" | "Alta" | "Critica";
@@ -24,11 +25,22 @@ function validPriority(value: string): value is TaskPriority {
   return ["Baixa", "Media", "Alta", "Critica"].includes(value);
 }
 
-export async function GET() {
+function ownsTask(owner: string, name: string, email: string) {
+  const normalized = owner.trim().toLowerCase();
+  return normalized === name.trim().toLowerCase() || normalized === email.trim().toLowerCase();
+}
+
+export async function GET(request: Request) {
+  const auth = await requireAuth(request);
+  if (auth.response || !auth.user) return auth.response;
   try {
     const db = getDb();
     const rows = await db.select().from(tasks).orderBy(desc(tasks.updatedAt)).limit(500);
-    return Response.json({ tasks: rows });
+    return Response.json({
+      tasks: auth.user.role === "Operador"
+        ? rows.filter((task) => ownsTask(task.owner, auth.user.name, auth.user.email))
+        : rows,
+    });
   } catch (error) {
     const message = routeError(error);
     if (message.includes("ainda nao esta migrado")) return Response.json({ tasks: [] });
@@ -37,6 +49,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAuth(request);
+  if (auth.response || !auth.user) return auth.response;
   try {
     const payload = (await request.json()) as {
       title?: string;
@@ -52,7 +66,7 @@ export async function POST(request: Request) {
     };
     const title = payload.title?.trim() ?? "";
     const description = payload.description?.trim() ?? "";
-    const owner = payload.owner?.trim() ?? "";
+    const owner = auth.user.role === "Operador" ? auth.user.name : payload.owner?.trim() ?? "";
     const priority = payload.priority?.trim() ?? "Media";
 
     if (!title || !description || !owner) {
@@ -73,7 +87,7 @@ export async function POST(request: Request) {
       sourceId: payload.sourceId || null,
       sourceTitle: payload.sourceTitle?.trim() || "",
       conversationId: payload.conversationId || null,
-      createdBy: payload.createdBy?.trim() || "Hiago Nunes",
+      createdBy: auth.user.name,
     }).returning();
 
     return Response.json({ task: created }, { status: 201 });
@@ -83,6 +97,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const auth = await requireAuth(request);
+  if (auth.response || !auth.user) return auth.response;
   try {
     const payload = (await request.json()) as {
       id?: number;
@@ -106,10 +122,15 @@ export async function PATCH(request: Request) {
     }
 
     const db = getDb();
+    const [existing] = await db.select().from(tasks).where(eq(tasks.id, payload.id)).limit(1);
+    if (!existing) return Response.json({ error: "Tarefa nao encontrada." }, { status: 404 });
+    if (auth.user.role === "Operador" && !ownsTask(existing.owner, auth.user.name, auth.user.email)) {
+      return Response.json({ error: "Voce so pode atualizar as proprias tarefas." }, { status: 403 });
+    }
     const [updated] = await db.update(tasks).set({
       title: payload.title?.trim(),
       description: payload.description?.trim(),
-      owner: payload.owner?.trim(),
+      owner: auth.user.role === "Operador" ? undefined : payload.owner?.trim(),
       priority: payload.priority,
       status: payload.status,
       dueDate: payload.dueDate === undefined ? undefined : payload.dueDate || null,
@@ -118,7 +139,6 @@ export async function PATCH(request: Request) {
       completedAt: payload.status === "Resolvida" ? new Date().toISOString() : payload.status ? null : undefined,
     }).where(eq(tasks.id, payload.id)).returning();
 
-    if (!updated) return Response.json({ error: "Tarefa nao encontrada." }, { status: 404 });
     return Response.json({ task: updated });
   } catch (error) {
     return Response.json({ error: routeError(error) }, { status: 500 });

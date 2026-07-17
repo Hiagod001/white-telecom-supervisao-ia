@@ -12,6 +12,7 @@ import { inferSector } from "../../../../../lib/blip-storage";
 import { hasOpenAiKey } from "../../../../../lib/blip";
 import { analyzeAttendance } from "../../../../../lib/openai-analysis";
 import { transcribeBlipAudio } from "../../../../../lib/openai-transcription";
+import { requireAuth } from "../../../../../lib/auth";
 
 type FileEnv = { PROCESS_FILES?: R2Bucket };
 
@@ -99,6 +100,8 @@ async function enrichAudioMessages(
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAuth(request, ["Administrador"]);
+  if (auth.response) return auth.response;
   try {
     if (!hasOpenAiKey()) {
       return Response.json(

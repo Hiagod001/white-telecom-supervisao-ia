@@ -8,7 +8,33 @@ export const users = sqliteTable("users", {
   role: text("role").notNull(),
   team: text("team").notNull().default("Operacao"),
   status: text("status").notNull().default("Ativo"),
+  attendantIdentity: text("attendant_identity").notNull().default(""),
   passwordHash: text("password_hash").notNull(),
+  mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(true),
+  passwordChangedAt: text("password_changed_at"),
+  lastLoginAt: text("last_login_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const authSessions = sqliteTable("auth_sessions", {
+  id: text("id").primaryKey(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  ipAddress: text("ip_address").notNull().default(""),
+  userAgent: text("user_agent").notNull().default(""),
+});
+
+export const authLoginAttempts = sqliteTable("auth_login_attempts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  email: text("email").notNull(),
+  ipAddress: text("ip_address").notNull().default(""),
+  successful: integer("successful", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -65,6 +91,8 @@ export const actionLogs = sqliteTable("action_logs", {
   targetType: text("target_type").notNull(),
   targetId: text("target_id").notNull(),
   note: text("note").notNull().default(""),
+  actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: text("actor_name").notNull().default("Sistema"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

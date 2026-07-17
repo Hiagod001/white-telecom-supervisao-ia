@@ -1,5 +1,6 @@
 import { getDb } from "../../../db";
 import { actionLogs, notificationEvents } from "../../../db/schema";
+import { requireAuth } from "../../../lib/auth";
 
 function routeError(error: unknown) {
   const message = error instanceof Error ? error.message : "Unexpected error";
@@ -10,6 +11,8 @@ function routeError(error: unknown) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAuth(request);
+  if (auth.response || !auth.user) return auth.response;
   try {
     const payload = (await request.json()) as {
       action?: string;
@@ -20,6 +23,11 @@ export async function POST(request: Request) {
     const action = payload.action?.trim() ?? "";
     const targetType = payload.targetType?.trim() ?? "";
     const targetId = payload.targetId?.trim() ?? "";
+
+    const operatorActions = ["feedback", "contest", "mark_notification_read", "open_ticket"];
+    if (auth.user.role === "Operador" && !operatorActions.includes(action)) {
+      return Response.json({ error: "Seu perfil nao pode executar esta acao." }, { status: 403 });
+    }
 
     if (!action || !targetType || !targetId) {
       return Response.json(
@@ -36,6 +44,8 @@ export async function POST(request: Request) {
         targetType,
         targetId,
         note: payload.note ?? "",
+        actorUserId: auth.user.id,
+        actorName: auth.user.name,
       })
       .returning();
 
