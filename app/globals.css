@@ -5207,11 +5207,22 @@ button {
   .period-control {
     order: 3;
     width: 100%;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
   }
 
   .period-control button {
-    flex: 0 0 auto;
+    min-width: 0;
+    padding-inline: 6px;
+    white-space: normal;
+  }
+
+  .period-control .custom-period {
+    grid-column: 1 / -1;
+    margin-left: 0;
+    border-left: 0;
+    border-radius: 5px;
   }
 
   .view-tools .toggle {
@@ -5762,4 +5773,69 @@ button {
   .login-heading h1 { font-size: 24px; }
   .user-access-card,
   .user-password-reset { grid-template-columns: 1fr; }
+}
+
+/* Alignment audit: keep dense operational content readable at every breakpoint. */
+.ranking-row,
+.ranking-list > .ranking-row {
+  grid-template-columns: 28px minmax(0, 1fr) 48px minmax(86px, auto);
+  gap: 10px;
+  min-height: 68px;
+  padding: 10px;
+}
+
+.ranking-row > span:not(.ranking-metrics) {
+  min-width: 0;
+}
+
+.ranking-row > span:not(.ranking-metrics) strong,
+.ranking-row > span:not(.ranking-metrics) small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-metrics {
+  min-width: 86px;
+  display: grid !important;
+  justify-items: end;
+  gap: 3px;
+}
+
+.ranking-metrics small {
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.sidebar-footer {
+  position: static;
+  margin-top: 12px;
+  flex: 0 0 auto;
+}
+
+.theme-dark input:-webkit-autofill,
+.theme-dark input:-webkit-autofill:hover,
+.theme-dark input:-webkit-autofill:focus,
+.theme-dark textarea:-webkit-autofill,
+.theme-dark select:-webkit-autofill {
+  border-color: #3a3a3a;
+  -webkit-text-fill-color: #f7f7f7;
+  box-shadow: 0 0 0 1000px #181818 inset;
+  caret-color: #f7f7f7;
+  transition: background-color 9999s ease-out 0s;
+}
+
+@media (max-width: 760px) {
+  .ranking-row,
+  .ranking-list > .ranking-row {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    min-height: 82px;
+  }
+
+  .ranking-metrics {
+    grid-column: 2 / 4;
+    display: flex !important;
+    justify-content: space-between;
+    width: 100%;
+  }
 }

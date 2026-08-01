@@ -1701,8 +1701,10 @@ function Overview({
                   <small>{row.team} - {row.volume < 8 ? "amostra pequena" : `${row.volume} casos elegíveis`}</small>
                 </span>
                 <em>{row.score.toFixed(1)}</em>
-                <small>{percent(row.adherence)} aderência</small>
-                <small className={Number(row.trend) >= 0 ? "positive" : "negative"}>{row.trend}</small>
+                <span className="ranking-metrics">
+                  <small>{percent(row.adherence)} aderência</small>
+                  <small className={Number(row.trend) >= 0 ? "positive" : "negative"}>{row.trend}</small>
+                </span>
               </div>
             ))}
           </div>
