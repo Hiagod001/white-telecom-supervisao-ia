@@ -276,6 +276,37 @@ type AgentThread = {
   messages: AgentMessage[];
 };
 
+type AgentApiResponse = {
+  content?: string;
+  facts?: string[];
+  sources?: string[];
+  confidence?: "Alta" | "Media" | "Baixa";
+  error?: string;
+};
+
+async function requestAgentAnswer(
+  question: string,
+  sector: Sector,
+  period: string,
+  history: AgentMessage[] = [],
+) {
+  const response = await fetch("/api/ai/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      question,
+      sector,
+      period,
+      history: history.slice(-6).map(({ role, content }) => ({ role, content })),
+    }),
+  });
+  const payload = await response.json() as AgentApiResponse;
+  if (!response.ok || !payload.content) {
+    throw new Error(payload.error ?? "O agente não conseguiu responder agora.");
+  }
+  return payload;
+}
+
 const attendantNames = [
   "Ana Costa",
   "Bruno Lima",
@@ -717,6 +748,8 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [loadingState, setLoadingState] = useState<"ready" | "loading" | "error" | "empty">("ready");
   const [agentQuestion, setAgentQuestion] = useState("");
+  const [agentReply, setAgentReply] = useState("");
+  const [agentBusy, setAgentBusy] = useState(false);
   const [toast, setToast] = useState<ActionToast | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -1046,6 +1079,22 @@ export default function Home() {
   const notify = (title: string, body: string) => {
     setToast({ title, body });
     window.setTimeout(() => setToast(null), 3600);
+  };
+
+  const submitMiniAgent = async (suggestion?: string) => {
+    const question = (suggestion ?? agentQuestion).trim();
+    if (!question || agentBusy) return;
+    setAgentQuestion(question);
+    setAgentReply("");
+    setAgentBusy(true);
+    try {
+      const answer = await requestAgentAnswer(question, operationalSector, period);
+      setAgentReply(answer.content ?? "");
+    } catch (error) {
+      setAgentReply(error instanceof Error ? error.message : "O agente não conseguiu responder agora.");
+    } finally {
+      setAgentBusy(false);
+    }
   };
 
   const persistAction = (action: string, targetType: string, targetId: string, note: string) => {
@@ -1442,9 +1491,7 @@ export default function Home() {
             )}
             {activeView === "ai" && (
               <AiAgent
-                rows={filtered}
-                ranking={attendantRanking}
-                alerts={alerts}
+                sector={operationalSector}
                 period={period}
               />
             )}
@@ -1505,12 +1552,12 @@ export default function Home() {
                 <header><span><Bot size={19} /></span><div><strong>Agente de IA</strong><small>Uai Assistant</small></div><button className="icon-button" onClick={() => setAssistantOpen(false)} title="Fechar"><X size={17} /></button></header>
                 <div className="assistant-body">
                   <div className="assistant-welcome"><Bot size={28} /><strong>Como posso ajudar?</strong><p>Pergunte sobre operadores, conversões, alertas ou métricas.</p></div>
-                  {["Qual é meu melhor operador esta semana?", "Quais são as principais objeções?", "Qual a projeção para o próximo mês?", "Tem algum alerta crítico?"].map((prompt) => (
-                    <button key={prompt} onClick={() => setAgentQuestion(prompt)}>{prompt}</button>
+                  {["Como está a operação neste período?", "Quais atendimentos exigem atenção?", "Como está a aderência aos processos?", "Tem algum alerta crítico?"].map((prompt) => (
+                    <button key={prompt} onClick={() => submitMiniAgent(prompt)} disabled={agentBusy}>{prompt}</button>
                   ))}
-                  {agentQuestion ? <div className="assistant-answer"><strong>{agentQuestion}</strong><p>Encontrei dados relacionados no período atual. A integração OpenAI poderá substituir esta resposta demonstrativa mantendo as mesmas fontes e permissões.</p></div> : null}
+                  {agentQuestion && (agentReply || agentBusy) ? <div className="assistant-answer"><strong>{agentQuestion}</strong><p>{agentBusy ? "Analisando os dados permitidos..." : agentReply}</p></div> : null}
                 </div>
-                <footer><input value={agentQuestion} onChange={(event) => setAgentQuestion(event.target.value)} placeholder="Digite sua pergunta..." /><button className="icon-button" onClick={() => notify("Pergunta enviada", "O agente consultou os dados disponíveis.")} title="Enviar"><Send size={17} /></button></footer>
+                <footer><input value={agentQuestion} onChange={(event) => setAgentQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") submitMiniAgent(); }} placeholder="Digite sua pergunta..." /><button className="icon-button" onClick={() => submitMiniAgent()} disabled={!agentQuestion.trim() || agentBusy} title="Enviar"><Send size={17} /></button></footer>
               </aside>
             ) : null}
           </>
@@ -3027,28 +3074,23 @@ function createAgentThreads(
 }
 
 function AiAgent({
-  rows,
-  ranking,
-  alerts,
+  sector,
   period,
 }: {
-  rows: Conversation[];
-  ranking: AgentRankingRow[];
-  alerts: AlertItem[];
+  sector: Sector;
   period: string;
 }) {
-  const [threads, setThreads] = useState<AgentThread[]>(() => createAgentThreads(rows, ranking, alerts, period));
+  const [threads, setThreads] = useState<AgentThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const activeThread = threads.find((thread) => thread.id === activeThreadId);
-  const suggestions = [
-    "Como está a operação comercial este mês?",
-    "Qual é o melhor vendedor?",
-    "Por que os clientes não fecham?",
-    "Quais alertas exigem atenção?",
-  ];
+  const suggestions = sector === "Comercial"
+    ? ["Como está a operação comercial neste período?", "Qual é o melhor vendedor?", "Por que os clientes não fecham?", "Quais alertas exigem atenção?"]
+    : sector === "Retencao"
+      ? ["Como está a retenção neste período?", "Quais são os principais motivos de cancelamento?", "Há reincidências preocupantes?", "Quais alertas exigem atenção?"]
+      : ["Como está a operação de atendimento?", "Qual atendente se destacou?", "Onde a aderência está mais baixa?", "Quais alertas exigem atenção?"];
 
   const startNewChat = () => {
     setActiveThreadId(null);
@@ -3057,9 +3099,10 @@ function AiAgent({
     setHistoryOpen(false);
   };
 
-  const submitQuestion = (suggestedQuestion?: string) => {
+  const submitQuestion = async (suggestedQuestion?: string) => {
     const question = (suggestedQuestion ?? draft).trim();
     if (!question || isThinking) return;
+    const previousMessages = activeThread?.messages ?? [];
     const nextMessageIndex = (activeThread?.messages.length ?? 0) + 1;
     const threadId = activeThreadId ?? `chat-${threads.length + 1}`;
     const userMessage: AgentMessage = { id: `${threadId}-user-${nextMessageIndex}`, role: "user", content: question };
@@ -3078,18 +3121,30 @@ function AiAgent({
     setDraft("");
     setIsThinking(true);
     setHistoryOpen(false);
-    window.setTimeout(() => {
-      const response = buildCommercialAgentAnswer(question, rows, ranking, alerts, period);
+    try {
+      const response = await requestAgentAnswer(question, sector, period, previousMessages);
       const assistantMessage: AgentMessage = {
         id: `${threadId}-assistant-${nextMessageIndex + 1}`,
         role: "assistant",
-        ...response,
+        content: response.content ?? "",
+        facts: response.facts,
+        sources: response.sources,
       };
       setThreads((current) => current.map((thread) =>
         thread.id === threadId ? { ...thread, messages: [...thread.messages, assistantMessage] } : thread,
       ));
+    } catch (error) {
+      const assistantMessage: AgentMessage = {
+        id: `${threadId}-assistant-${nextMessageIndex + 1}`,
+        role: "assistant",
+        content: error instanceof Error ? error.message : "Não foi possível consultar o agente agora.",
+      };
+      setThreads((current) => current.map((thread) =>
+        thread.id === threadId ? { ...thread, messages: [...thread.messages, assistantMessage] } : thread,
+      ));
+    } finally {
       setIsThinking(false);
-    }, 650);
+    }
   };
 
   return (
@@ -3118,8 +3173,8 @@ function AiAgent({
       <div className="ai-chat-main">
         <header className="ai-chat-toolbar">
           <button className="icon-button ai-history-toggle" onClick={() => setHistoryOpen((open) => !open)} title="Abrir conversas"><PanelLeftOpen size={18} /></button>
-          <div><strong>Uai Sales AI</strong><small>Análise comercial baseada nos dados do filtro atual</small></div>
-          <span className="ai-data-status"><span />Base demonstrativa</span>
+          <div><strong>Agente de Supervisão Uai</strong><small>Análise baseada nos dados reais e processos da operação</small></div>
+          <span className="ai-data-status"><span />Base protegida</span>
           {activeThread ? <button onClick={startNewChat}><Plus size={15} />Novo chat</button> : null}
         </header>
 
@@ -3129,7 +3184,7 @@ function AiAgent({
               <article className={`ai-message ${message.role}`} key={message.id}>
                 {message.role === "assistant" ? <span className="ai-avatar"><Bot size={17} /></span> : null}
                 <div className="ai-message-bubble">
-                  <strong>{message.role === "assistant" ? "Uai Sales AI" : "Você"}</strong>
+                  <strong>{message.role === "assistant" ? "Agente Uai" : "Você"}</strong>
                   {message.content.split("\n\n").map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                   {message.facts?.length ? <ul>{message.facts.map((fact) => <li key={fact}>{fact}</li>)}</ul> : null}
                   {message.sources?.length ? <div className="ai-sources"><small>Fontes consultadas</small>{message.sources.map((source) => <span key={source}>{source}</span>)}</div> : null}
@@ -3142,7 +3197,7 @@ function AiAgent({
           <div className="ai-empty-state">
             <span><Bot size={30} /></span>
             <h3>Como posso ajudar?</h3>
-            <p>Pergunte sobre vendas, conversão, vendedores, perdas, aderência, previsões, alertas ou qualquer indicador do sistema.</p>
+            <p>Pergunte sobre indicadores, equipe, processos, aderência, tarefas, conversas ou alertas da operação.</p>
             <div className="ai-suggestion-grid">
               {suggestions.map((suggestion) => <button key={suggestion} onClick={() => submitQuestion(suggestion)}>{suggestion}</button>)}
             </div>

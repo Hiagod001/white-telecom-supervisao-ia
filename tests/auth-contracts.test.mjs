@@ -38,6 +38,7 @@ test("all operational APIs enforce authentication and admin routes enforce roles
     "tasks",
     "conversations/imported",
     "conversations/messages",
+    "ai/chat",
     "admin/users",
     "admin/attendants",
     "admin/integrations",
@@ -65,6 +66,25 @@ test("all operational APIs enforce authentication and admin routes enforce roles
   assert.match(tasksRoute, /Voce so pode atualizar as proprias tarefas/);
   assert.match(conversationsRoute, /attendantIdentity/);
   assert.match(webhook, /if \(!expectedSecret\)/);
+});
+
+test("AI agent is server-side, permission-aware, and token constrained", async () => {
+  const [agentRoute, agentClient, page] = await Promise.all([
+    readFile(new URL("../app/api/ai/chat/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/openai-agent.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(agentRoute, /requireAuth\(request/);
+  assert.match(agentRoute, /auth\.user\.role !== "Operador"/);
+  assert.match(agentRoute, /attendantIdentity/);
+  assert.match(agentRoute, /processDefinitions/);
+  assert.match(agentClient, /OPENAI_API_KEY/);
+  assert.match(agentClient, /reasoning: \{ effort: "medium" \}/);
+  assert.match(agentClient, /max_output_tokens: 1_200/);
+  assert.match(agentClient, /store: false/);
+  assert.match(page, /fetch\("\/api\/ai\/chat"/);
+  assert.doesNotMatch(page, /sk-svcacct-/);
 });
 
 test("the client renders real login and no longer exposes role switching", async () => {
