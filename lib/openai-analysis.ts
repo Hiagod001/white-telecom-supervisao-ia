@@ -30,6 +30,18 @@ export type AttendanceAnalysis = {
   }>;
 };
 
+export function normalizeAttendanceAnalysis(result: AttendanceAnalysis) {
+  const adherence = Math.min(100, Math.max(0, result.adherence));
+  const expectedScore = Math.round(adherence) / 10;
+  const score = Math.min(10, Math.max(0, result.overallScore));
+
+  return {
+    ...result,
+    adherence,
+    overallScore: Math.abs((score * 10) - adherence) >= 40 ? expectedScore : score,
+  };
+}
+
 function outputText(payload: Record<string, unknown>) {
   if (typeof payload.output_text === "string") return payload.output_text;
   const output = Array.isArray(payload.output) ? payload.output : [];
@@ -155,6 +167,6 @@ export async function analyzeAttendance(input: AnalysisInput) {
 
   return {
     model,
-    result: JSON.parse(text) as AttendanceAnalysis,
+    result: normalizeAttendanceAnalysis(JSON.parse(text) as AttendanceAnalysis),
   };
 }
