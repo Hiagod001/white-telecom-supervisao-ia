@@ -50,6 +50,30 @@ test("analysis pipeline loads processes, documents, transcript and audio before 
   assert.match(migration, /CREATE TABLE `conversation_analyses`/);
 });
 
+test("audio pipeline refreshes Blip media, persists transcription state and protects playback", async () => {
+  const [blip, transcriptionRoute, audioRoute, schema, migration, page] = await Promise.all([
+    readFile(new URL("../lib/blip.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/transcriptions/run/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/conversations/audio/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0004_conscious_hedge_knight.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(blip, /refreshExpiredMedia=true/);
+  assert.match(transcriptionRoute, /audioTranscriptions/);
+  assert.match(transcriptionRoute, /transcribeBlipAudio/);
+  assert.match(transcriptionRoute, /status: "Processando"/);
+  assert.match(transcriptionRoute, /status: "Concluida"/);
+  assert.match(transcriptionRoute, /conversationAnalyses/);
+  assert.match(audioRoute, /refreshBlipMediaUrl/);
+  assert.match(audioRoute, /auth\.user\.role === "Operador"/);
+  assert.match(schema, /audioTranscriptions/);
+  assert.match(migration, /CREATE TABLE `audio_transcriptions`/);
+  assert.match(page, /Transcrever próximos 5/);
+  assert.match(page, /chat-audio-transcript/);
+});
+
 test("administrator can list and create attendants without storing Blip secrets in the browser", async () => {
   const attendantsRoute = await readFile(new URL("../app/api/admin/attendants/route.ts", import.meta.url), "utf8");
 

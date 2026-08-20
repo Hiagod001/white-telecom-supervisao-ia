@@ -164,6 +164,20 @@ export const blipMessages = sqliteTable("blip_messages", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const audioTranscriptions = sqliteTable("audio_transcriptions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  messageId: text("message_id").notNull().unique(),
+  ticketId: text("ticket_id").notNull(),
+  status: text("status").notNull().default("Pendente"),
+  model: text("model").notNull().default(""),
+  transcript: text("transcript").notNull().default(""),
+  error: text("error").notNull().default(""),
+  attempts: integer("attempts").notNull().default(0),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  transcribedAt: text("transcribed_at"),
+});
+
 export const blipSyncRuns = sqliteTable("blip_sync_runs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   status: text("status").notNull(),

@@ -17,6 +17,7 @@ import {
   Download,
   Database,
   Eye,
+  FileAudio,
   FileText,
   Headphones,
   LayoutDashboard,
@@ -473,12 +474,19 @@ const pendingDecisions = [
 ];
 
 const integrationFieldLabels: Record<string, string> = {
+  source: "Origem conectada",
+  contractId: "Contrato Blip",
+  botId: "Bot conectado",
+  credentialStatus: "Credencial",
+  ticketImport: "Importação de atendimentos",
   contractIdRef: "ID do contrato (variável BLIP_CONTRACT_ID)",
   botIdRef: "ID do bot (variável BLIP_BOT_ID)",
   authKeyRef: "Chave do bot (variável BLIP_AUTH_KEY)",
   webhookSecretRef: "Segredo do webhook (variável BLIP_WEBHOOK_SECRET)",
   apiKeyRef: "Chave da OpenAI (variável OPENAI_API_KEY)",
+  apiKeyStatus: "Credencial",
   model: "Modelo de análise",
+  transcriptionModel: "Modelo de transcrição",
   host: "Servidor",
   port: "Porta",
   username: "Usuário SSH",
@@ -763,10 +771,7 @@ export default function Home() {
   const [tasks, setTasks] = useState<ManagedTask[]>([]);
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
-  const [managedAttendants, setManagedAttendants] = useState<ManagedAttendant[]>([
-    { id: 1, identity: "manual:ana", fullName: "Ana Costa", email: "ana@uaitelecom.com.br", team: "Atendimento", status: "Ativo", source: "Manual" },
-    { id: 2, identity: "manual:bruno", fullName: "Bruno Lima", email: "bruno@uaitelecom.com.br", team: "Comercial", status: "Ativo", source: "Manual" },
-  ]);
+  const [managedAttendants, setManagedAttendants] = useState<ManagedAttendant[]>([]);
   const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>([
     {
       id: 1,
@@ -785,9 +790,9 @@ export default function Home() {
     },
   ]);
   const [integrationConfigs, setIntegrationConfigs] = useState<IntegrationConfig[]>([
-    { provider: "Blip", status: "Nao configurado", fields: { contractIdRef: "BLIP_CONTRACT_ID", botIdRef: "BLIP_BOT_ID", authKeyRef: "BLIP_AUTH_KEY", webhookSecretRef: "BLIP_WEBHOOK_SECRET" } },
-    { provider: "OpenAI", status: "Nao configurado", fields: { model: "gpt-5.6-luna", apiKeyRef: "OPENAI_API_KEY" } },
-    { provider: "PBX SSH", status: "Nao configurado", fields: { host: "", port: "22", username: "", recordingsPath: "/var/spool/asterisk/monitor" } },
+    { provider: "Blip", status: "Nao configurado", fields: { source: "Carregando...", contractId: "Carregando...", botId: "Carregando...", credentialStatus: "Carregando...", ticketImport: "Carregando..." } },
+    { provider: "OpenAI", status: "Nao configurado", fields: { model: "Carregando...", transcriptionModel: "Carregando...", apiKeyStatus: "Carregando..." } },
+    { provider: "PBX SSH", status: "Nao configurado", fields: { host: "Aguardando dados do PBX", port: "22", username: "Aguardando dados do PBX", recordingsPath: "Aguardando dados do PBX" } },
   ]);
 
   useEffect(() => {
@@ -885,14 +890,30 @@ export default function Home() {
           if (!response.ok) throw new Error("Atendentes indisponíveis.");
           return response.json() as Promise<{ attendants?: ManagedAttendant[] }>;
         })
-        .then((payload) => {
-          if (payload.attendants?.length) setManagedAttendants(payload.attendants);
-        })
+        .then((payload) => setManagedAttendants(payload.attendants ?? []))
         .catch(() => undefined);
     };
     loadAttendants();
     window.addEventListener("blip-synchronized", loadAttendants);
     return () => window.removeEventListener("blip-synchronized", loadAttendants);
+  }, [authStatus, userRole]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || userRole !== "Administrador") return;
+    const loadIntegrations = () => {
+      fetch("/api/admin/integrations", { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("Integrações indisponíveis.");
+          return response.json() as Promise<{ configs?: IntegrationConfig[] }>;
+        })
+        .then((payload) => {
+          if (payload.configs?.length) setIntegrationConfigs(payload.configs);
+        })
+        .catch(() => undefined);
+    };
+    loadIntegrations();
+    window.addEventListener("integrations-updated", loadIntegrations);
+    return () => window.removeEventListener("integrations-updated", loadIntegrations);
   }, [authStatus, userRole]);
 
   useEffect(() => {
@@ -2112,12 +2133,26 @@ function Transcript({ conversation }: { conversation: Conversation }) {
           }
           const isAudio = message.contentType.includes("audio");
           const isDocument = /document|file|pdf|word/.test(message.contentType);
+          const audioTranscript = message.text.replace(/^\[Audio transcrito\]\s*/, "");
+          const hasAudioTranscript = message.text.startsWith("[Audio transcrito]");
           return (
             <div className={`chat-message-row ${message.role}`} key={message.id}>
               <article className="chat-bubble">
                 <strong>{message.role === "attendant" ? message.senderName || conversation.attendant : message.senderName || conversation.client}</strong>
                 {isAudio ? (
-                  <div className="chat-audio"><button className="icon-button" title="Reproduzir audio"><Play size={15} /></button><i><span /></i><small>{message.text}</small></div>
+                  <div className="chat-audio-block">
+                    {conversation.source === "Blip" ? (
+                      <audio controls preload="none" src={`/api/conversations/audio?messageId=${encodeURIComponent(message.id)}`}>
+                        Seu navegador não conseguiu reproduzir este áudio.
+                      </audio>
+                    ) : (
+                      <div className="chat-audio"><button className="icon-button" title="Reproduzir áudio"><Play size={15} /></button><i><span /></i><small>Áudio demonstrativo</small></div>
+                    )}
+                    <div className={`chat-audio-transcript ${hasAudioTranscript ? "ready" : "pending"}`}>
+                      <strong>{hasAudioTranscript ? "Transcrição" : "Transcrição pendente"}</strong>
+                      <p>{hasAudioTranscript ? audioTranscript : "O áudio está na fila de transcrição da supervisão."}</p>
+                    </div>
+                  </div>
                 ) : isDocument ? (
                   <div className="chat-document"><Paperclip size={17} /><span>{message.text}</span></div>
                 ) : <p>{message.text}</p>}
@@ -3608,6 +3643,19 @@ function Integrations({
 }) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<{ attendants: number; sources: number } | null>(null);
+  const [audioStats, setAudioStats] = useState({ total: 0, pending: 0, processing: 0, completed: 0, failed: 0 });
+
+  useEffect(() => {
+    fetch("/api/admin/transcriptions/run", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Fila de transcrições indisponível.");
+        return response.json() as Promise<{ stats?: typeof audioStats }>;
+      })
+      .then((payload) => {
+        if (payload.stats) setAudioStats(payload.stats);
+      })
+      .catch(() => undefined);
+  }, []);
   const updateConfig = (provider: IntegrationConfig["provider"], key: string, value: string) => {
     setConfigs((items) =>
       items.map((item) =>
@@ -3644,6 +3692,7 @@ function Integrations({
       const payload = (await response.json()) as { connected?: boolean; attendants?: number; sources?: unknown[]; error?: string };
       if (!response.ok || !payload.connected) throw new Error(payload.error ?? "Conexão recusada.");
       setConfigs((items) => items.map((item) => item.provider === "Blip" ? { ...item, status: "Configurado" } : item));
+      window.dispatchEvent(new Event("integrations-updated"));
       onNotify("Blip conectada", `${payload.attendants ?? 0} agentes de Suporte e Comercial encontrados em ${payload.sources?.length ?? 1} conexão(ões).`);
     } catch (error) {
       setConfigs((items) => items.map((item) => item.provider === "Blip" ? { ...item, status: "Erro" } : item));
@@ -3677,6 +3726,27 @@ function Integrations({
     }
   };
 
+  const transcribeAudio = async () => {
+    setBusyAction("transcribe-Blip");
+    try {
+      const response = await fetch("/api/admin/transcriptions/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 5 }),
+      });
+      const payload = await response.json() as { processed?: number; stats?: typeof audioStats; results?: Array<{ status: string }>; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "A transcrição não foi iniciada.");
+      if (payload.stats) setAudioStats(payload.stats);
+      const failures = payload.results?.filter((item) => item.status === "Erro").length ?? 0;
+      window.dispatchEvent(new Event("blip-synchronized"));
+      onNotify("Áudios processados", `${payload.processed ?? 0} áudios processados; ${failures} com pendência.`);
+    } catch (error) {
+      onNotify("Falha na transcrição", error instanceof Error ? error.message : "Falha inesperada.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const runAnalysis = async () => {
     setBusyAction("analyze-OpenAI");
     try {
@@ -3704,7 +3774,7 @@ function Integrations({
             <article className="integration-card" key={config.provider}>
               <header>
                 <strong>{config.provider}</strong>
-                <span className={config.status === "Configurado" ? "status cumpriu" : "status incerto"}>{config.status}</span>
+                <span className={config.status === "Configurado" ? "status cumpriu" : "status incerto"}>{config.status === "Nao configurado" ? "Não configurado" : config.status}</span>
               </header>
               {Object.entries(config.fields).map(([key, value]) => (
                 <label key={key}>
@@ -3714,18 +3784,21 @@ function Integrations({
                     type="text"
                     onChange={(event) => updateConfig(config.provider, key, event.target.value)}
                     placeholder={key === "host" ? "10.0.0.15" : key}
-                    readOnly={key.toLowerCase().endsWith("ref")}
+                    readOnly={config.provider !== "PBX SSH" || key.toLowerCase().endsWith("ref")}
                   />
                 </label>
               ))}
               <div className="form-actions">
-                <button onClick={() => saveIntegration(config)} disabled={Boolean(busyAction)}><CheckCircle2 size={16} /> {busyAction === `save-${config.provider}` ? "Salvando..." : "Salvar"}</button>
+                {config.provider === "PBX SSH" ? <button onClick={() => saveIntegration(config)} disabled={Boolean(busyAction)}><CheckCircle2 size={16} /> {busyAction === `save-${config.provider}` ? "Salvando..." : "Salvar quando disponível"}</button> : null}
                 {config.provider === "Blip" ? <button onClick={testBlip} disabled={Boolean(busyAction)}><Activity size={16} /> {busyAction === "test-Blip" ? "Testando..." : "Testar conexao"}</button> : null}
                 {config.provider === "Blip" ? <button onClick={syncBlip} disabled={Boolean(busyAction)}><RefreshCw size={16} /> {busyAction === "sync-Blip" ? "Sincronizando agentes..." : "Sincronizar agentes"}</button> : null}
+                {config.provider === "Blip" ? <button onClick={transcribeAudio} disabled={Boolean(busyAction) || audioStats.pending === 0}><FileAudio size={16} /> {busyAction === "transcribe-Blip" ? "Transcrevendo..." : "Transcrever próximos 5"}</button> : null}
                 {config.provider === "OpenAI" ? <button onClick={runAnalysis} disabled={Boolean(busyAction)}><Bot size={16} /> {busyAction === "analyze-OpenAI" ? "Analisando..." : "Analisar pendentes"}</button> : null}
                 {config.provider === "PBX SSH" ? <button onClick={() => onNotify("PBX pendente", "O teste real sera liberado quando o acesso SSH estiver configurado no servidor.")}><Activity size={16} /> Testar conexao</button> : null}
               </div>
-              {config.provider === "Blip" ? <small className="integration-note">Nesta etapa, somente agentes das filas Suporte e Comercial são cadastrados. Tickets e mensagens permanecem bloqueados.</small> : null}
+              {config.provider === "Blip" ? <small className="integration-note">Agentes de Suporte e Comercial são sincronizados da Blip. A importação ampla de tickets permanece controlada até a publicação dos processos oficiais.</small> : null}
+              {config.provider === "OpenAI" ? <small className="integration-note">A mesma credencial segura executa as avaliações e a transcrição dos áudios, com modelos separados.</small> : null}
+              {config.provider === "PBX SSH" ? <small className="integration-note">Pendente até o envio do servidor, usuário, acesso SSH e diretório das gravações.</small> : null}
             </article>
           ))}
         </div>
@@ -3733,16 +3806,22 @@ function Integrations({
           <div className="sync-summary">
             <span><Users size={17} /><strong>{lastSync.attendants}</strong> agentes cadastrados</span>
             <span><Database size={17} /><strong>{lastSync.sources}</strong> conexões Blip</span>
-            <span><ShieldCheck size={17} /><strong>0</strong> tickets importados</span>
+            <span><ShieldCheck size={17} /><strong>Pausada</strong> importação ampla</span>
           </div>
         ) : null}
+        <div className="sync-summary transcription-summary">
+          <span><FileAudio size={17} /><strong>{audioStats.total}</strong> áudios encontrados</span>
+          <span><Clock3 size={17} /><strong>{audioStats.pending}</strong> pendentes</span>
+          <span><CheckCircle2 size={17} /><strong>{audioStats.completed}</strong> transcritos</span>
+          <span><AlertTriangle size={17} /><strong>{audioStats.failed}</strong> com erro</span>
+        </div>
       </article>
       <article className="panel">
         <PanelTitle icon={ShieldCheck} title="Como a ingestao funciona" subtitle="Fluxo implementado para substituir os dados demonstrativos pelas fontes reais." />
         <div className="summary-grid">
           <div className="info-card">
             <h3>Blip</h3>
-            <p>Agora sincroniza somente os agentes de Suporte e Comercial. A importação de atendimentos será liberada após a configuração dos processos.</p>
+            <p>Sincroniza os agentes de Suporte e Comercial, renova links temporários de mídia e mantém cada áudio associado à mensagem e ao ticket de origem.</p>
           </div>
           <div className="info-card">
             <h3>OpenAI</h3>
@@ -3785,6 +3864,7 @@ function Admin({
   });
   const [resetUserId, setResetUserId] = useState<number | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [syncingAttendants, setSyncingAttendants] = useState(false);
   const [draftAttendant, setDraftAttendant] = useState({ fullName: "", email: "", team: "Atendimento" });
   const [customTeam, setCustomTeam] = useState("");
   const [extraTeams, setExtraTeams] = useState<string[]>([]);
@@ -3843,11 +3923,28 @@ function Admin({
     setTemporaryPassword(generated);
   };
 
-  const markConfigured = (provider: IntegrationConfig["provider"]) => {
-    setConfigs((items) =>
-      items.map((item) => (item.provider === provider ? { ...item, status: "Configurado" } : item)),
-    );
-    onNotify("Supervisão atualizada", `${provider} ficou pronto para testes de integração.`);
+  const syncAttendants = async () => {
+    setSyncingAttendants(true);
+    try {
+      const response = await fetch("/api/admin/integrations/blip/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "attendants" }),
+      });
+      const payload = await response.json() as { attendants?: number; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Sincronização recusada.");
+      const attendantsResponse = await fetch("/api/admin/attendants", { cache: "no-store" });
+      const attendantsPayload = await attendantsResponse.json() as { attendants?: ManagedAttendant[]; error?: string };
+      if (!attendantsResponse.ok) throw new Error(attendantsPayload.error ?? "Lista de atendentes indisponível.");
+      setAttendants(attendantsPayload.attendants ?? []);
+      setConfigs((items) => items.map((item) => item.provider === "Blip" ? { ...item, status: "Configurado" } : item));
+      window.dispatchEvent(new Event("blip-synchronized"));
+      onNotify("Atendentes sincronizados", `${payload.attendants ?? 0} atendentes das filas Suporte e Comercial foram atualizados pela Blip.`);
+    } catch (error) {
+      onNotify("Sincronização não concluída", error instanceof Error ? error.message : "Falha inesperada.");
+    } finally {
+      setSyncingAttendants(false);
+    }
   };
 
   const addTeam = () => {
@@ -3917,7 +4014,10 @@ function Admin({
       </section>
 
       <article className="panel">
-        <PanelTitle icon={Users} title="Atendentes cadastrados" subtitle="A origem indica se o cadastro veio da Blip ou foi criado manualmente." />
+        <div className="panel-heading-actions">
+          <PanelTitle icon={Users} title="Atendentes cadastrados" subtitle="A lista usa os atendentes reais das filas Suporte e Comercial cadastrados na Blip." />
+          <button onClick={syncAttendants} disabled={syncingAttendants}><RefreshCw size={16} /> {syncingAttendants ? "Sincronizando..." : "Sincronizar da Blip"}</button>
+        </div>
         <div className="attendant-table">
           <header><span>Atendente</span><span>Equipe</span><span>Origem</span><span>Status</span></header>
           {attendants.map((attendant) => <div key={attendant.identity}><span><strong>{attendant.fullName}</strong><small>{attendant.email || attendant.identity}</small></span><span>{attendant.team}</span><span className={`source-badge ${attendant.source.toLowerCase()}`}>{attendant.source}</span><span className="status cumpriu">{attendant.status}</span></div>)}
@@ -3951,13 +4051,12 @@ function Admin({
         </article>
 
         <article className="panel">
-          <PanelTitle icon={Activity} title="Supervisão do administrador" subtitle="Atalhos para marcar integrações como prontas após validar credenciais." />
+          <PanelTitle icon={Activity} title="Supervisão do administrador" subtitle="Estado obtido automaticamente das configurações seguras do servidor." />
           <div className="cards-list">
             {configs.map((config) => (
               <div className="case-card" key={config.provider}>
                 <span><strong>{config.provider}</strong><small>{config.provider === "PBX SSH" ? "Busca gravações no servidor via SSH" : "Usado pelo pipeline de IA"}</small></span>
                 <span className={config.status === "Configurado" ? "status cumpriu" : "status incerto"}>{config.status}</span>
-                <button onClick={() => markConfigured(config.provider)}>Marcar pronto</button>
               </div>
             ))}
           </div>

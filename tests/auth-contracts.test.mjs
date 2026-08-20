@@ -38,6 +38,7 @@ test("all operational APIs enforce authentication and admin routes enforce roles
     "tasks",
     "conversations/imported",
     "conversations/messages",
+    "conversations/audio",
     "ai/chat",
     "admin/users",
     "admin/attendants",
@@ -47,6 +48,7 @@ test("all operational APIs enforce authentication and admin routes enforce roles
     "admin/integrations/blip/test",
     "admin/integrations/blip/sync",
     "admin/analysis/run",
+    "admin/transcriptions/run",
   ];
   for (const route of protectedRoutes) {
     const source = await readFile(new URL(`../app/api/${route}/route.ts`, import.meta.url), "utf8");

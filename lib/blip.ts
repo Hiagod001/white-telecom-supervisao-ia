@@ -237,6 +237,27 @@ export async function getBlipThread(customerIdentity: string, take = 100) {
   }
 }
 
+export async function getBlipTicketMessages(ticketId: string, refreshExpiredMedia = false, take = 100) {
+  const safeTicketId = encodeURIComponent(ticketId);
+  const safeTake = Math.min(100, Math.max(1, take));
+  const refresh = refreshExpiredMedia ? "&refreshExpiredMedia=true" : "";
+  const resource = await sendBlipCommand<BlipCollection<BlipMessage>>({
+    to: "postmaster@desk.msging.net",
+    method: "get",
+    uri: `/tickets/${safeTicketId}/messages?getFromOwnerIfTunnel=true&$take=${safeTake}&$ascending=true${refresh}`,
+  });
+  return collection<BlipMessage>(resource);
+}
+
+export async function refreshBlipMediaUrl(ticketId: string, messageId: string) {
+  const messages = await getBlipTicketMessages(ticketId, true, 100);
+  const message = messages.items.find((item) => item.id === messageId);
+  if (!message) throw new Error("A mensagem de audio nao foi localizada novamente na Blip.");
+  const normalized = normalizeBlipMessage(message, ticketId);
+  if (!normalized.mediaUri) throw new Error("A Blip nao retornou uma URL renovada para o audio.");
+  return normalized.mediaUri;
+}
+
 export function attendantStatus(status: string | number | undefined) {
   const labels: Record<string, string> = {
     "0": "Offline",

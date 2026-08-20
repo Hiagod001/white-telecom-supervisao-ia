@@ -2,6 +2,8 @@ import { desc } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { integrations } from "../../../../db/schema";
 import { requireAuth } from "../../../../lib/auth";
+import { getBlipSources, hasOpenAiKey, isBlipTicketImportEnabled } from "../../../../lib/blip";
+import { runtimeEnv } from "../../../../lib/runtime-env";
 
 function routeError(error: unknown) {
   const message = error instanceof Error ? error.message : "Unexpected error";
@@ -43,8 +45,51 @@ export async function GET(request: Request) {
       .orderBy(desc(integrations.id))
       .limit(50);
 
+    const values = runtimeEnv();
+    let blipSources: ReturnType<typeof getBlipSources> = [];
+    try {
+      blipSources = getBlipSources();
+    } catch {
+      blipSources = [];
+    }
+    const blip = blipSources[0];
+    const openAiReady = hasOpenAiKey();
+    const pbxReady = Boolean(values.PBX_HOST?.trim() && values.PBX_USER?.trim());
+
     return Response.json({
       integrations: rows.map((row) => ({ ...row, configJson: safeConfigJson(row.configJson) })),
+      configs: [
+        {
+          provider: "Blip",
+          status: blip ? "Configurado" : "Nao configurado",
+          fields: {
+            source: blip?.label ?? "Aguardando configuracao",
+            contractId: blip?.contractId ?? "Nao configurado",
+            botId: blip?.botId ?? "Nao configurado",
+            credentialStatus: blip ? "Chave segura configurada no servidor" : "Chave ausente",
+            ticketImport: isBlipTicketImportEnabled() ? "Ativa" : "Controlada manualmente",
+          },
+        },
+        {
+          provider: "OpenAI",
+          status: openAiReady ? "Configurado" : "Nao configurado",
+          fields: {
+            model: values.OPENAI_MODEL?.trim() || "gpt-5.6-luna",
+            transcriptionModel: values.OPENAI_TRANSCRIPTION_MODEL?.trim() || "gpt-4o-mini-transcribe",
+            apiKeyStatus: openAiReady ? "Chave segura configurada no servidor" : "Chave ausente",
+          },
+        },
+        {
+          provider: "PBX SSH",
+          status: pbxReady ? "Configurado" : "Nao configurado",
+          fields: {
+            host: values.PBX_HOST?.trim() || "Aguardando dados do PBX",
+            port: values.PBX_PORT?.trim() || "22",
+            username: values.PBX_USER?.trim() || "Aguardando dados do PBX",
+            recordingsPath: values.PBX_RECORDINGS_PATH?.trim() || "Aguardando dados do PBX",
+          },
+        },
+      ],
     });
   } catch (error) {
     return Response.json({ error: routeError(error) }, { status: 500 });
