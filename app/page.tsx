@@ -737,13 +737,14 @@ export default function Home() {
     return Array.from(new Set(filtered.map((conversation) => conversation.attendant).filter(Boolean)))
       .map((name) => {
         const rows = filtered.filter((conversation) => conversation.attendant === name && conversation.eligible);
+        const previousRows = rows.slice(5, 10);
         return {
           name,
           team: rows[0]?.team ?? "Sem amostra",
           volume: rows.length,
           score: average(rows.map((conversation) => conversation.score)),
           adherence: average(rows.map((conversation) => conversation.adherence)),
-          trend: trend(average(rows.slice(0, 5).map((conversation) => conversation.score)), average(rows.slice(5, 10).map((conversation) => conversation.score))),
+          trend: previousRows.length ? trend(average(rows.slice(0, 5).map((conversation) => conversation.score)), average(previousRows.map((conversation) => conversation.score))) : "Sem período anterior",
         };
       })
       .filter((row) => row.volume > 0)
@@ -1516,7 +1517,7 @@ function Overview({
                 <em>{row.score.toFixed(1)}</em>
                 <span className="ranking-metrics">
                   <small>{percent(row.adherence)} aderência</small>
-                  <small className={Number(row.trend) >= 0 ? "positive" : "negative"}>{row.trend}</small>
+                  <small className={row.trend.startsWith("+") ? "positive" : row.trend.startsWith("-") ? "negative" : ""}>{row.trend}</small>
                 </span>
               </div>
             ))}
@@ -1618,7 +1619,7 @@ function Conversations({
                 <td>{row.attendant}<small>{row.team}</small></td>
                 <td>{ptLabel(row.sector)}<small>{row.processVersion}</small></td>
                 <td><ChannelPill channel={row.channel} /></td>
-                <td>{ptLabel(row.classification)}<small>{Math.round(row.confidence * 100)}% confiança</small></td>
+                <td>{ptLabel(row.classification)}<small>{row.confidence > 0 ? `${Math.round(row.confidence * 100)}% confiança` : "Confiança não calculada"}</small></td>
                 <td>{row.eligible ? "Sim" : "Não"}<small>{ptLabel(row.ineligibleReason)}</small></td>
                 <td><ScoreBadge score={row.score} /></td>
                 <td>{percent(row.adherence)}</td>
