@@ -14,7 +14,9 @@ test("Uai Telecom product source includes the requested surfaces", async () => {
   assert.doesNotMatch(page, /Delipe|Cota mensal|500 analises/i);
   assert.match(page, /OperatorPanel/);
   assert.match(page, /operatorNavItems/);
-  assert.match(page, /Cadastrar novo processo/);
+  assert.match(page, /Processos cadastrados/);
+  assert.match(page, /Criar processo/);
+  assert.match(page, /Editar processo/);
   assert.match(page, /Canais aplicáveis/);
   assert.match(page, /WhatsApp/);
   assert.match(page, /Blip Chat/);

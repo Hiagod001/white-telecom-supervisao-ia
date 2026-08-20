@@ -3,6 +3,7 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   BarChart3,
   Bell,
   Bot,
@@ -28,6 +29,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
+  Pencil,
   Phone,
   Play,
   Plus,
@@ -199,11 +201,13 @@ type ManagedProcess = {
   name: string;
   sector: Sector;
   status: "Rascunho" | "Em revisao" | "Publicado" | "Arquivado";
+  version: string;
   objective: string;
   instructions: string;
   channels: Channel[];
   steps: Array<{ name: string; weight: number; criterion: string }>;
   documents: ManagedProcessDocument[];
+  createdAt?: string;
 };
 
 type ManagedProcessDocument = {
@@ -212,6 +216,8 @@ type ManagedProcessDocument = {
   mimeType: string;
   size: number;
   status: string;
+  createdAt?: string;
+  extractedText?: string;
   file?: File;
 };
 
@@ -599,6 +605,12 @@ function formatDate(date: Date) {
   }).format(date);
 }
 
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function percent(value: number) {
   return `${Math.round(value)}%`;
 }
@@ -728,6 +740,7 @@ export default function Home() {
       name: "Atendimento - Suporte N1",
       sector: "Atendimento",
       status: "Publicado",
+      version: "v1.0",
       objective: "Validar se o operador diagnosticou, registrou e confirmou a resolução do problema.",
       instructions: "Considere cumprida uma etapa somente quando houver evidência explícita na conversa.",
       channels: ["WhatsApp", "Blip Chat", "Ligacao"],
@@ -3170,18 +3183,39 @@ function Processes({
   onNotify: (title: string, body: string) => void;
 }) {
   const availableChannels: Channel[] = ["WhatsApp", "Blip Chat", "Ligacao"];
-  const [draft, setDraft] = useState<ManagedProcess>({
+  const createEmptyProcess = (): ManagedProcess => ({
     id: 0,
     name: "",
     sector: "Atendimento",
     status: "Rascunho",
+    version: "v1.0",
     objective: "",
     instructions: "",
     channels: ["WhatsApp", "Blip Chat"],
     steps: [{ name: "", weight: 1, criterion: "" }],
     documents: [],
   });
+  const [mode, setMode] = useState<"list" | "create" | "edit">("list");
+  const [draft, setDraft] = useState<ManagedProcess>(createEmptyProcess);
   const [saving, setSaving] = useState(false);
+  const [removingDocumentId, setRemovingDocumentId] = useState<number | string | null>(null);
+
+  const openCreate = () => {
+    setDraft(createEmptyProcess());
+    setMode("create");
+  };
+
+  const openEdit = (process: ManagedProcess) => {
+    setDraft({
+      ...process,
+      version: process.version || "v1.0",
+      instructions: process.instructions ?? "",
+      channels: [...(process.channels ?? [])],
+      steps: (process.steps ?? []).map((step) => ({ ...step })),
+      documents: [...(process.documents ?? [])],
+    });
+    setMode("edit");
+  };
 
   const updateStep = (index: number, key: "name" | "weight" | "criterion", value: string) => {
     setDraft((current) => ({
@@ -3212,6 +3246,30 @@ function Processes({
     }
   };
 
+  const removeDocument = async (document: ManagedProcessDocument) => {
+    if (document.file || typeof document.id !== "number") {
+      setDraft((current) => ({ ...current, documents: current.documents.filter((item) => item.id !== document.id) }));
+      return;
+    }
+    if (!window.confirm(`Remover o documento "${document.name}" deste processo?`)) return;
+
+    setRemovingDocumentId(document.id);
+    try {
+      const response = await fetch(`/api/admin/processes/documents?id=${document.id}&processId=${draft.id}`, { method: "DELETE" });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Não foi possível remover o documento.");
+      setDraft((current) => ({ ...current, documents: current.documents.filter((item) => item.id !== document.id) }));
+      setProcesses((items) => items.map((item) => item.id === draft.id
+        ? { ...item, documents: item.documents.filter((existing) => existing.id !== document.id) }
+        : item));
+      onNotify("Documento removido", `${document.name} não faz mais parte deste processo.`);
+    } catch (error) {
+      onNotify("Documento não removido", error instanceof Error ? error.message : "Falha inesperada ao remover o arquivo.");
+    } finally {
+      setRemovingDocumentId(null);
+    }
+  };
+
   const saveProcess = async () => {
     if (!draft.name.trim() || !draft.objective.trim()) {
       onNotify("Processo incompleto", "Informe nome e objetivo antes de salvar.");
@@ -3222,11 +3280,16 @@ function Processes({
       onNotify("Etapas obrigatorias", "Inclua pelo menos uma etapa com criterio de avaliacao.");
       return;
     }
+    if (!draft.channels.length) {
+      onNotify("Canal obrigatório", "Selecione pelo menos um canal em que este processo será aplicado.");
+      return;
+    }
 
     setSaving(true);
     try {
+      const editing = draft.id > 0;
       const response = await fetch("/api/admin/processes", {
-        method: "POST",
+        method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...draft, steps, documents: undefined }),
       });
@@ -3251,22 +3314,17 @@ function Processes({
       const created: ManagedProcess = {
         ...draft,
         ...payload.process,
+        version: draft.version,
+        channels: draft.channels,
         steps,
-        documents: uploadedDocuments,
+        documents: [...draft.documents.filter((document) => !document.file), ...uploadedDocuments],
       };
-      setProcesses((items) => [created, ...items]);
-      onNotify("Processo salvo", `${created.name} foi cadastrado e ja pode compor o contexto da IA.`);
-      setDraft({
-        id: 0,
-        name: "",
-        sector: "Atendimento",
-        status: "Rascunho",
-        objective: "",
-        instructions: "",
-        channels: ["WhatsApp", "Blip Chat"],
-        steps: [{ name: "", weight: 1, criterion: "" }],
-        documents: [],
-      });
+      setProcesses((items) => editing
+        ? items.map((item) => item.id === created.id ? created : item)
+        : [created, ...items]);
+      onNotify(editing ? "Processo atualizado" : "Processo criado", `${created.name} foi salvo e já pode compor o contexto da IA.`);
+      setDraft(createEmptyProcess());
+      setMode("list");
     } catch (error) {
       onNotify("Processo nao salvo", error instanceof Error ? error.message : "Falha inesperada ao cadastrar o processo.");
     } finally {
@@ -3274,88 +3332,188 @@ function Processes({
     }
   };
 
-  return (
-    <section className="stack">
-      <article className="panel">
-        <PanelTitle icon={FileText} title="Cadastrar novo processo" subtitle="Defina quando e como a IA deve avaliar cada atendimento." />
-        <div className="process-editor">
-          <label>Nome<input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Atendimento - Suporte N1" /></label>
-          <label>Setor<select value={draft.sector} onChange={(event) => setDraft((current) => ({ ...current, sector: event.target.value as Sector }))}><option>Comercial</option><option>Atendimento</option><option value="Retencao">Retenção</option></select></label>
-          <label>Status<select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as ManagedProcess["status"] }))}><option>Rascunho</option><option value="Em revisao">Em revisão</option><option>Publicado</option><option>Arquivado</option></select></label>
-          <label>Objetivo<textarea value={draft.objective} onChange={(event) => setDraft((current) => ({ ...current, objective: event.target.value }))} placeholder="Descreva o objetivo da avaliação e quando esse processo deve ser usado." /></label>
-          <label>Orientações para a IA<textarea value={draft.instructions} onChange={(event) => setDraft((current) => ({ ...current, instructions: event.target.value }))} placeholder="Explique exceções, evidências obrigatórias e o que nunca deve ser inferido." /></label>
-          <fieldset className="channel-selector">
-            <legend>Canais aplicáveis</legend>
-            {availableChannels.map((item) => (
-              <label key={item}>
-                <input
-                  type="checkbox"
-                  checked={draft.channels.includes(item)}
-                  onChange={() => setDraft((current) => ({
-                    ...current,
-                    channels: current.channels.includes(item)
-                      ? current.channels.filter((channel) => channel !== item)
-                      : [...current.channels, item],
-                  }))}
-                />
-                {ptLabel(item)}
-              </label>
-            ))}
-          </fieldset>
-        </div>
-      </article>
-      <article className="panel">
-        <PanelTitle icon={ClipboardCheck} title="Etapas do novo processo" subtitle="Inclua critério e peso; etapas vazias são ignoradas ao salvar." />
-        <div className="step-list">
-          {draft.steps.map((step, index) => (
-            <div className="step-card editable-step" key={index}>
-              <label>Etapa<input value={step.name} onChange={(event) => updateStep(index, "name", event.target.value)} placeholder="Ex.: Confirmacao de resolucao" /></label>
-              <label>Peso<input value={step.weight} onChange={(event) => updateStep(index, "weight", event.target.value)} inputMode="numeric" /></label>
-              <label>Critério<input value={step.criterion} onChange={(event) => updateStep(index, "criterion", event.target.value)} placeholder="Evidência esperada para cumprir a etapa" /></label>
-              <button className="icon-button remove-step" onClick={() => setDraft((current) => ({ ...current, steps: current.steps.filter((_, stepIndex) => stepIndex !== index) }))} title="Remover etapa"><Trash2 size={16} /></button>
-            </div>
-          ))}
-          <div className="form-actions">
-            <button onClick={() => setDraft((current) => ({ ...current, steps: [...current.steps, { name: "", weight: 1, criterion: "" }] }))}><Plus size={16} /> Adicionar etapa</button>
+  if (mode === "list") {
+    const published = processes.filter((process) => process.status === "Publicado").length;
+    const documentCount = processes.reduce((total, process) => total + process.documents.length, 0);
+    return (
+      <section className="process-workspace process-list-view">
+        <div className="process-list-heading">
+          <div>
+            <span className="process-kicker">Biblioteca de processos</span>
+            <h2>Processos cadastrados</h2>
+            <p>Consulte regras, etapas e documentos antes de criar ou alterar uma avaliação.</p>
           </div>
+          <button className="process-primary-action" onClick={openCreate}><Plus size={17} /> Criar processo</button>
         </div>
-      </article>
-      <article className="panel">
-        <PanelTitle icon={Paperclip} title="Documentos de referência" subtitle="Anexe roteiros, políticas, tabelas e manuais que ajudam a IA a interpretar o papel deste processo." />
-        <label className="document-dropzone">
-          <Upload size={22} />
-          <strong>Selecionar documentos</strong>
-          <span>TXT, MD, CSV, JSON, PDF ou DOCX, até 10 MB por arquivo</span>
-          <input type="file" multiple accept=".txt,.md,.csv,.json,.xml,.pdf,.doc,.docx" onChange={(event) => addDocuments(event.target.files)} />
-        </label>
-        {draft.documents.length ? (
-          <div className="document-list">
-            {draft.documents.map((document) => (
-              <div key={document.id}>
-                <FileText size={18} />
-                <span><strong>{document.name}</strong><small>{(document.size / 1024).toFixed(1)} KB - {document.status}</small></span>
-                <button className="icon-button" onClick={() => setDraft((current) => ({ ...current, documents: current.documents.filter((item) => item.id !== document.id) }))} title="Remover documento"><Trash2 size={16} /></button>
+
+        <div className="process-summary" aria-label="Resumo dos processos">
+          <span><strong>{processes.length}</strong> processos</span>
+          <span><strong>{published}</strong> publicados</span>
+          <span><strong>{documentCount}</strong> documentos</span>
+        </div>
+
+        <div className="process-catalog">
+          {processes.length ? processes.map((process) => (
+            <article className="process-list-item" key={process.id}>
+              <div className="process-list-main">
+                <span className="process-file-icon"><FileText size={19} /></span>
+                <div>
+                  <div className="process-title-line">
+                    <h3>{process.name}</h3>
+                    <span className={`process-status process-status-${process.status.toLowerCase().replaceAll(" ", "-")}`}>{ptLabel(process.status)}</span>
+                  </div>
+                  <p>{process.objective}</p>
+                  <div className="process-meta-row">
+                    <span>{ptLabel(process.sector)}</span>
+                    <span>{process.version || "v1.0"}</span>
+                    <span>{process.steps.length} etapas</span>
+                    <span>{process.channels.map(ptLabel).join(", ") || "Sem canal"}</span>
+                  </div>
+                </div>
+                <button className="process-edit-action" onClick={() => openEdit(process)}><Pencil size={16} /> Editar</button>
               </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="process-savebar">
-          <span>{draft.steps.filter((step) => step.name.trim()).length} etapas e {draft.documents.length} documentos preparados</span>
-          <button onClick={saveProcess} disabled={saving}><CheckCircle2 size={16} /> {saving ? "Salvando..." : "Salvar processo"}</button>
+
+              <div className="process-documents-preview">
+                <strong><Paperclip size={15} /> Documentos anexados ({process.documents.length})</strong>
+                {process.documents.length ? (
+                  <div className="process-document-chips">
+                    {process.documents.map((document) => (
+                      <span key={document.id}>
+                        <FileText size={14} />
+                        <span>{document.name}<small>{formatFileSize(document.size)}</small></span>
+                        {typeof document.id === "number" ? (
+                          <a href={`/api/admin/processes/documents?id=${document.id}`} target="_blank" rel="noreferrer" title={`Abrir ${document.name}`}><Eye size={15} /></a>
+                        ) : null}
+                      </span>
+                    ))}
+                  </div>
+                ) : <p>Nenhum documento anexado a este processo.</p>}
+              </div>
+            </article>
+          )) : (
+            <div className="process-empty-state">
+              <FileText size={24} />
+              <strong>Nenhum processo cadastrado</strong>
+              <p>Crie o primeiro processo para orientar as análises da IA.</p>
+              <button className="process-primary-action" onClick={openCreate}><Plus size={17} /> Criar processo</button>
+            </div>
+          )}
         </div>
-      </article>
-      <article className="panel">
-        <PanelTitle icon={FileText} title="Processos cadastrados" subtitle="Clique para reutilizar como base de uma nova versão." />
-        <div className="cards-list">
-          {processes.map((process) => (
-            <button className="case-card" key={process.id} onClick={() => setDraft({ ...process, id: 0, status: "Rascunho", instructions: process.instructions ?? "", channels: process.channels ?? [], documents: process.documents ?? [] })}>
-              <span><strong>{process.name}</strong><small>{process.objective}</small></span>
-              <span>{ptLabel(process.sector)}<small>{process.steps.length} etapas - {process.documents.length} documentos</small></span>
-              <span className="status cumpriu">{ptLabel(process.status)}</span>
-            </button>
-          ))}
+      </section>
+    );
+  }
+
+  const isEditing = mode === "edit";
+  return (
+    <section className="process-workspace process-edit-view">
+      <div className="process-editor-heading">
+        <button className="process-back-action" onClick={() => setMode("list")}><ArrowLeft size={17} /> Voltar para processos</button>
+        <div>
+          <span className="process-kicker">{isEditing ? `Processo #${draft.id}` : "Novo processo"}</span>
+          <h2>{isEditing ? "Editar processo" : "Criar processo"}</h2>
+          <p>{isEditing ? "Atualize as regras que orientam a avaliação e a IA." : "Defina quando e como a IA deve avaliar os atendimentos."}</p>
         </div>
-      </article>
+      </div>
+
+      <div className="process-editor-layout">
+        <div className="process-editor-content">
+          <article className="panel process-section">
+            <PanelTitle icon={FileText} title="Identificação e aplicação" subtitle="Informações que determinam quando este processo deve ser usado." />
+            <div className="process-editor process-form-grid">
+              <label className="process-name-field">Nome do processo<input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Atendimento - Suporte N1" /></label>
+              <label>Versão<input value={draft.version} onChange={(event) => setDraft((current) => ({ ...current, version: event.target.value }))} placeholder="v1.0" /></label>
+              <label>Setor<select value={draft.sector} onChange={(event) => setDraft((current) => ({ ...current, sector: event.target.value as Sector }))}><option>Comercial</option><option>Atendimento</option><option value="Retencao">Retenção</option></select></label>
+              <label>Status<select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as ManagedProcess["status"] }))}><option>Rascunho</option><option value="Em revisao">Em revisão</option><option>Publicado</option><option>Arquivado</option></select></label>
+              <label className="process-wide-field">Objetivo<textarea value={draft.objective} onChange={(event) => setDraft((current) => ({ ...current, objective: event.target.value }))} placeholder="Descreva o objetivo da avaliação e quando este processo deve ser usado." /></label>
+              <label className="process-wide-field">Orientações detalhadas para a IA<textarea value={draft.instructions} onChange={(event) => setDraft((current) => ({ ...current, instructions: event.target.value }))} placeholder="Explique exceções, evidências obrigatórias, regras de decisão e o que nunca deve ser inferido." /></label>
+              <fieldset className="channel-selector">
+                <legend>Canais aplicáveis</legend>
+                {availableChannels.map((item) => (
+                  <label key={item}>
+                    <input
+                      type="checkbox"
+                      checked={draft.channels.includes(item)}
+                      onChange={() => setDraft((current) => ({
+                        ...current,
+                        channels: current.channels.includes(item)
+                          ? current.channels.filter((channel) => channel !== item)
+                          : [...current.channels, item],
+                      }))}
+                    />
+                    {ptLabel(item)}
+                  </label>
+                ))}
+              </fieldset>
+            </div>
+          </article>
+
+          <article className="panel process-section">
+            <PanelTitle icon={ClipboardCheck} title="Etapas e critérios" subtitle="Organize cada verificação com um peso e uma evidência objetiva." />
+            <div className="step-list process-step-list">
+              {draft.steps.map((step, index) => (
+                <div className="step-card editable-step process-step-editor" key={index}>
+                  <span className="process-step-number">{index + 1}</span>
+                  <label>Nome da etapa<input value={step.name} onChange={(event) => updateStep(index, "name", event.target.value)} placeholder="Ex.: Confirmação de resolução" /></label>
+                  <label>Peso<input type="number" min="1" max="10" value={step.weight} onChange={(event) => updateStep(index, "weight", event.target.value)} /></label>
+                  <label>Critério de avaliação<input value={step.criterion} onChange={(event) => updateStep(index, "criterion", event.target.value)} placeholder="Qual evidência precisa aparecer no atendimento?" /></label>
+                  <button className="icon-button remove-step" onClick={() => setDraft((current) => ({ ...current, steps: current.steps.filter((_, stepIndex) => stepIndex !== index) }))} title="Remover etapa"><Trash2 size={16} /></button>
+                </div>
+              ))}
+              <div className="form-actions">
+                <button onClick={() => setDraft((current) => ({ ...current, steps: [...current.steps, { name: "", weight: 1, criterion: "" }] }))}><Plus size={16} /> Adicionar etapa</button>
+              </div>
+            </div>
+          </article>
+
+          <article className="panel process-section">
+            <PanelTitle icon={Paperclip} title="Documentos de referência" subtitle="Consulte os anexos atuais ou inclua novos roteiros, políticas, tabelas e manuais." />
+            {draft.documents.length ? (
+              <div className="document-list process-document-list">
+                {draft.documents.map((document) => (
+                  <div key={document.id}>
+                    <span className="process-document-icon"><FileText size={18} /></span>
+                    <span><strong>{document.name}</strong><small>{formatFileSize(document.size)} · {document.status}{document.file ? " · Novo arquivo" : ""}</small></span>
+                    <div className="process-document-actions">
+                      {!document.file && typeof document.id === "number" ? (
+                        <a className="icon-button" href={`/api/admin/processes/documents?id=${document.id}`} target="_blank" rel="noreferrer" title="Visualizar documento"><Eye size={16} /></a>
+                      ) : null}
+                      <button className="icon-button" onClick={() => removeDocument(document)} disabled={removingDocumentId === document.id} title="Remover documento"><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="process-document-empty"><Paperclip size={19} /><span><strong>Nenhum documento anexado</strong><small>Adicione materiais que ajudem a IA a interpretar este processo.</small></span></div>
+            )}
+            <label className="document-dropzone process-document-upload">
+              <Upload size={22} />
+              <strong>Adicionar documentos</strong>
+              <span>TXT, MD, CSV, JSON, PDF ou DOCX, até 10 MB por arquivo</span>
+              <input type="file" multiple accept=".txt,.md,.csv,.json,.xml,.pdf,.doc,.docx" onChange={(event) => { addDocuments(event.target.files); event.target.value = ""; }} />
+            </label>
+          </article>
+        </div>
+
+        <aside className="process-editor-summary">
+          <span className="process-kicker">Resumo</span>
+          <h3>{draft.name || "Processo sem nome"}</h3>
+          <dl>
+            <div><dt>Status</dt><dd>{ptLabel(draft.status)}</dd></div>
+            <div><dt>Versão</dt><dd>{draft.version || "Não informada"}</dd></div>
+            <div><dt>Setor</dt><dd>{ptLabel(draft.sector)}</dd></div>
+            <div><dt>Canais</dt><dd>{draft.channels.length}</dd></div>
+            <div><dt>Etapas válidas</dt><dd>{draft.steps.filter((step) => step.name.trim() && step.criterion.trim()).length}</dd></div>
+            <div><dt>Documentos</dt><dd>{draft.documents.length}</dd></div>
+          </dl>
+          <p>As alterações passam a orientar as próximas análises quando o processo estiver publicado.</p>
+        </aside>
+      </div>
+
+      <div className="process-savebar process-editor-savebar">
+        <button className="process-secondary-action" onClick={() => setMode("list")}>Cancelar</button>
+        <span>{draft.steps.filter((step) => step.name.trim()).length} etapas e {draft.documents.length} documentos preparados</span>
+        <button className="process-primary-action" onClick={saveProcess} disabled={saving}><CheckCircle2 size={16} /> {saving ? "Salvando..." : isEditing ? "Salvar alterações" : "Criar processo"}</button>
+      </div>
     </section>
   );
 }

@@ -60,6 +60,24 @@ test("administrator can list and create attendants without storing Blip secrets 
   assert.doesNotMatch(attendantsRoute, /BLIP_AUTH_KEY/);
 });
 
+test("process workspace separates the catalog from create and edit flows", async () => {
+  const [page, processRoute, documentsRoute] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/processes/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/processes/documents/route.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(page, /"list" \| "create" \| "edit"/);
+  assert.match(page, /Criar processo/);
+  assert.match(page, /Editar processo/);
+  assert.match(page, /Documentos anexados/);
+  assert.match(page, /method: editing \? "PATCH" : "POST"/);
+  assert.match(processRoute, /export async function PATCH/);
+  assert.match(processRoute, /version: payload\.version/);
+  assert.match(documentsRoute, /Content-Disposition/);
+  assert.match(documentsRoute, /bucket\.get\(document\.storageKey\)/);
+});
+
 test("task workflow persists alert-linked work and status changes", async () => {
   const [taskRoute, schema, migration, page] = await Promise.all([
     readFile(new URL("../app/api/tasks/route.ts", import.meta.url), "utf8"),

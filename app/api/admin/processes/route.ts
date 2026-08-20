@@ -47,6 +47,7 @@ export async function POST(request: Request) {
       status?: string;
       objective?: string;
       instructions?: string;
+      version?: string;
       channels?: string[];
       steps?: Array<{ name: string; weight: number; criterion: string }>;
     };
@@ -70,6 +71,7 @@ export async function POST(request: Request) {
         objective,
         instructions: payload.instructions?.trim() ?? "",
         status: payload.status ?? "Rascunho",
+        version: payload.version?.trim() || "v1.0",
         channelsJson: JSON.stringify(payload.channels ?? []),
         stepsJson: JSON.stringify(payload.steps ?? []),
       })
@@ -102,6 +104,7 @@ export async function PATCH(request: Request) {
       status?: string;
       objective?: string;
       instructions?: string;
+      version?: string;
       channels?: string[];
       steps?: Array<{ name: string; weight: number; criterion: string }>;
     };
@@ -118,6 +121,7 @@ export async function PATCH(request: Request) {
         status: payload.status,
         objective: payload.objective?.trim(),
         instructions: payload.instructions?.trim(),
+        version: payload.version?.trim(),
         channelsJson: payload.channels ? JSON.stringify(payload.channels) : undefined,
         stepsJson: payload.steps ? JSON.stringify(payload.steps) : undefined,
       })
@@ -127,7 +131,19 @@ export async function PATCH(request: Request) {
     if (!updated) {
       return Response.json({ error: "Processo nao encontrado." }, { status: 404 });
     }
-    return Response.json({ process: updated });
+    const documents = await db
+      .select()
+      .from(processDocuments)
+      .where(eq(processDocuments.processId, updated.id))
+      .orderBy(desc(processDocuments.id));
+    return Response.json({
+      process: {
+        ...updated,
+        channels: JSON.parse(updated.channelsJson),
+        steps: JSON.parse(updated.stepsJson),
+        documents,
+      },
+    });
   } catch (error) {
     return Response.json({ error: routeError(error) }, { status: 500 });
   }

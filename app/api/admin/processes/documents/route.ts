@@ -33,11 +33,46 @@ export async function GET(request: Request) {
   const auth = await requireAuth(request, ["Administrador", "Gestor"]);
   if (auth.response) return auth.response;
   try {
-    const processId = Number(new URL(request.url).searchParams.get("processId"));
+    const url = new URL(request.url);
+    const documentId = Number(url.searchParams.get("id"));
+    const processId = Number(url.searchParams.get("processId"));
+    const db = getDb();
+
+    if (documentId) {
+      const [document] = await db
+        .select()
+        .from(processDocuments)
+        .where(eq(processDocuments.id, documentId))
+        .limit(1);
+      if (!document) return Response.json({ error: "Documento nao encontrado." }, { status: 404 });
+
+      const bucket = (env as unknown as FileEnv).PROCESS_FILES;
+      if (bucket && document.storageKey) {
+        const object = await bucket.get(document.storageKey);
+        if (!object) return Response.json({ error: "Arquivo nao encontrado no armazenamento." }, { status: 404 });
+        return new Response(object.body, {
+          headers: {
+            "Content-Type": document.mimeType || object.httpMetadata?.contentType || "application/octet-stream",
+            "Content-Disposition": `inline; filename="${safeName(document.name)}"`,
+            "Cache-Control": "private, no-store",
+          },
+        });
+      }
+      if (document.extractedText) {
+        return new Response(document.extractedText, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Content-Disposition": `inline; filename="${safeName(document.name)}"`,
+            "Cache-Control": "private, no-store",
+          },
+        });
+      }
+      return Response.json({ error: "Este arquivo ainda nao esta disponivel para visualizacao." }, { status: 404 });
+    }
+
     if (!processId) {
       return Response.json({ error: "processId e obrigatorio." }, { status: 400 });
     }
-    const db = getDb();
     const documents = await db
       .select()
       .from(processDocuments)
