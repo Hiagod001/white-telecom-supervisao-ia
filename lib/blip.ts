@@ -1,6 +1,4 @@
-import { env } from "cloudflare:workers";
-
-type RuntimeEnv = Record<string, string | undefined>;
+import { runtimeEnv } from "./runtime-env";
 
 export type BlipCommand = {
   id?: string;
@@ -59,10 +57,6 @@ export type BlipMessage = {
   status?: string;
   [key: string]: unknown;
 };
-
-function runtimeEnv() {
-  return env as unknown as RuntimeEnv;
-}
 
 export function getBlipConfig() {
   const values = runtimeEnv();

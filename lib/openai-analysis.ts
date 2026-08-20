@@ -1,6 +1,4 @@
-import { env } from "cloudflare:workers";
-
-type RuntimeEnv = Record<string, string | undefined>;
+import { runtimeEnv } from "./runtime-env";
 
 export type AnalysisInput = {
   ticketId: string;
@@ -31,10 +29,6 @@ export type AttendanceAnalysis = {
     evidence: string;
   }>;
 };
-
-function runtimeEnv() {
-  return env as unknown as RuntimeEnv;
-}
 
 function outputText(payload: Record<string, unknown>) {
   if (typeof payload.output_text === "string") return payload.output_text;

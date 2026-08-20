@@ -1,6 +1,4 @@
-import { env } from "cloudflare:workers";
-
-type RuntimeEnv = Record<string, string | undefined>;
+import { runtimeEnv } from "./runtime-env";
 
 export type AgentChatMessage = {
   role: "user" | "assistant";
@@ -13,10 +11,6 @@ export type AgentAnswer = {
   sources: string[];
   confidence: "Alta" | "Media" | "Baixa";
 };
-
-function runtimeEnv() {
-  return env as unknown as RuntimeEnv;
-}
 
 function outputText(payload: Record<string, unknown>) {
   if (typeof payload.output_text === "string") return payload.output_text;

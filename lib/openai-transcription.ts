@@ -1,12 +1,6 @@
-import { env } from "cloudflare:workers";
-
-type RuntimeEnv = Record<string, string | undefined>;
+import { runtimeEnv } from "./runtime-env";
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
-
-function runtimeEnv() {
-  return env as unknown as RuntimeEnv;
-}
 
 function audioFilename(contentType: string) {
   const extensions: Record<string, string> = {
