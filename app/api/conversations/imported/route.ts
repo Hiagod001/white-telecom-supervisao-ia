@@ -1,6 +1,6 @@
 import { asc, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { blipMessages, blipTickets, conversationAnalyses } from "../../../../db/schema";
+import { blipMessages, blipTickets, conversationAnalyses, processDefinitions } from "../../../../db/schema";
 import { inferSector } from "../../../../lib/blip-storage";
 import { requireAuth } from "../../../../lib/auth";
 
@@ -10,6 +10,19 @@ function resultValue(resultJson: string) {
   } catch {
     return {};
   }
+}
+
+function processIds(value: string | undefined) {
+  try {
+    const parsed = JSON.parse(value ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((item): item is number => Number.isInteger(item)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function removeTemporaryWording(value: string) {
+  return value.replace(/processo piloto/gi, "processo de avaliação").replace(/piloto\s*-\s*/gi, "");
 }
 
 function maskIdentity(identity: string) {
@@ -24,6 +37,7 @@ export async function GET(request: Request) {
   try {
     const limit = Math.min(200, Math.max(1, Number(new URL(request.url).searchParams.get("limit") ?? 100)));
     const db = getDb();
+    const definitions = await db.select().from(processDefinitions);
     const rows = await db
       .select({ ticket: blipTickets, analysis: conversationAnalyses })
       .from(blipTickets)
@@ -49,16 +63,16 @@ export async function GET(request: Request) {
       const duration = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60_000));
       const score = typeof analysis.overallScore === "number" ? analysis.overallScore : 0;
       const adherence = typeof analysis.adherence === "number" ? analysis.adherence : 0;
-      const risks = Array.isArray(analysis.risks) ? analysis.risks.filter((item): item is string => typeof item === "string") : [];
+      const risks = Array.isArray(analysis.risks) ? analysis.risks.filter((item): item is string => typeof item === "string").map(removeTemporaryWording) : [];
       const strengths = Array.isArray(analysis.strengths) ? analysis.strengths.filter((item): item is string => typeof item === "string") : [];
       const improvements = Array.isArray(analysis.improvements) ? analysis.improvements.filter((item): item is string => typeof item === "string") : [];
       const stepEvaluations = Array.isArray(analysis.stepEvaluations)
         ? analysis.stepEvaluations.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object").map((item) => ({
-          name: typeof item.step === "string" ? item.step : "Etapa sem nome",
+          name: typeof item.step === "string" ? removeTemporaryWording(item.step) : "Etapa sem nome",
           weight: 1,
           status: typeof item.status === "string" ? item.status : "Incerto",
           score: typeof item.score === "number" ? item.score : 0,
-          evidence: typeof item.evidence === "string" ? item.evidence : "Sem evidencia registrada.",
+          evidence: typeof item.evidence === "string" ? removeTemporaryWording(item.evidence) : "Sem evidencia registrada.",
           guidance: "",
         }))
         : [];
@@ -70,8 +84,11 @@ export async function GET(request: Request) {
         ? Math.max(0, Math.round((new Date(firstAttendant.storageDate).getTime() - new Date(firstClient.storageDate).getTime()) / 60_000))
         : 0;
       const hasCompletedAnalysis = row.analysis?.status === "Concluida";
-      const processMatch = typeof analysis.processMatch === "string" && !/^Piloto\s*-/i.test(analysis.processMatch)
-        ? analysis.processMatch
+      const matchedProcesses = processIds(row.analysis?.processIdsJson)
+        .map((id) => definitions.find((definition) => definition.id === id))
+        .filter((definition): definition is typeof definitions[number] => Boolean(definition));
+      const processLabel = matchedProcesses.length
+        ? matchedProcesses.map((definition) => `${definition.name} ${definition.version}`).join(", ")
         : "Processo não cadastrado";
 
       conversations.push({
@@ -86,19 +103,19 @@ export async function GET(request: Request) {
         sector: inferSector(row.ticket.team),
         channel: row.ticket.channel,
         duration,
-        classification: typeof analysis.classification === "string" ? analysis.classification : "Aguardando analise",
+        classification: typeof analysis.classification === "string" ? removeTemporaryWording(analysis.classification) : "Aguardando analise",
         eligible: messages.length > 1 && hasCompletedAnalysis,
         ineligibleReason: messages.length <= 1 ? "Historico insuficiente" : hasCompletedAnalysis ? "Elegivel para avaliacao" : "Analise pendente",
         score,
         adherence,
         sentiment: risks.length ? "Atencao" : "Baixa tensao",
-        resolution: typeof analysis.resolution === "string" ? analysis.resolution : "Indeterminado",
+        resolution: typeof analysis.resolution === "string" ? removeTemporaryWording(analysis.resolution) : "Indeterminado",
         recurrences: 0,
         alerts: risks,
         reviewStatus: "Pendente",
         confidence: 0,
-        processVersion: processMatch,
-        process: processMatch,
+        processVersion: processLabel,
+        process: processLabel,
         firstResponse,
         responseTime: 0,
         isMultichannelCase: false,
@@ -108,9 +125,9 @@ export async function GET(request: Request) {
         analysisStatus: row.analysis?.status ?? "Pendente",
         analysisModel: row.analysis?.model ?? "",
         analyzedAt: row.analysis?.analyzedAt ?? null,
-        summary: typeof analysis.summary === "string" ? analysis.summary : "",
-        strengths,
-        improvements,
+        summary: typeof analysis.summary === "string" ? removeTemporaryWording(analysis.summary) : "",
+        strengths: strengths.map(removeTemporaryWording),
+        improvements: improvements.map(removeTemporaryWording),
         stepEvaluations,
       });
     }
