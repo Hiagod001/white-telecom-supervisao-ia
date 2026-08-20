@@ -6599,3 +6599,13 @@ button {
     grid-row: 1;
   }
 }
+.empty-copy {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+  padding: 28px 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}

@@ -12,6 +12,7 @@ test("Uai Telecom product source includes the requested surfaces", async () => {
   assert.match(layout, /Uai Telecom - Supervisão IA/);
   assert.match(page, /Uai Telecom/);
   assert.doesNotMatch(page, /Delipe|Cota mensal|500 analises/i);
+  assert.doesNotMatch(page, /demoMessages|generateConversations|pseudoRandom|attendantNames|dados de demo|simulado|demonstrativo/i);
   assert.match(page, /OperatorPanel/);
   assert.match(page, /operatorNavItems/);
   assert.match(page, /Processos cadastrados/);

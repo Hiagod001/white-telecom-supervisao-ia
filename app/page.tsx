@@ -32,7 +32,6 @@ import {
   Paperclip,
   Pencil,
   Phone,
-  Play,
   Plus,
   RefreshCw,
   Search,
@@ -105,7 +104,7 @@ type Conversation = {
   score: number;
   adherence: number;
   sentiment: "Baixa tensao" | "Atencao" | "Critico";
-  resolution: "Resolvido" | "Parcial" | "Nao resolvido" | "Indeterminado";
+  resolution: string;
   recurrences: number;
   alerts: string[];
   reviewStatus: ReviewStatus;
@@ -115,7 +114,16 @@ type Conversation = {
   firstResponse: number;
   responseTime: number;
   isMultichannelCase: boolean;
-  source?: "Blip" | "Demonstracao";
+  source: "Blip";
+  ticketStatus: string;
+  messageCount: number;
+  analysisStatus: string;
+  analysisModel: string;
+  analyzedAt: string | null;
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  stepEvaluations: ProcessStep[];
 };
 
 type AlertItem = {
@@ -308,166 +316,9 @@ async function requestAgentAnswer(
   return payload;
 }
 
-const attendantNames = [
-  "Ana Costa",
-  "Bruno Lima",
-  "Carla Souza",
-  "Diego Rocha",
-  "Elisa Martins",
-  "Fabio Duarte",
-  "Giovana Reis",
-  "Henrique Alves",
-  "Isabela Nunes",
-  "Joao Pedro",
-  "Karina Melo",
-  "Lucas Moura",
-  "Marina Lopes",
-  "Nicolas Prado",
-  "Olivia Freitas",
-  "Paulo Rios",
-  "Renata Campos",
-  "Samuel Torres",
-  "Tais Ribeiro",
-  "Vitor Sales",
-];
-
-const classificationBySector: Record<Sector, string[]> = {
-  Comercial: [
-    "Venda concluida",
-    "Lead potencial em andamento",
-    "Sem cobertura",
-    "Cliente parou de responder",
-    "Contato invalido",
-    "Sem interesse",
-    "Retorno agendado",
-  ],
-  Atendimento: [
-    "Resolvido no primeiro contato",
-    "Escalado para visita tecnica",
-    "OS aberta",
-    "Aguardando cliente",
-    "Nao resolvido",
-    "Orientacao de upgrade",
-  ],
-  Retencao: [
-    "Retido",
-    "Cancelado",
-    "Pendente",
-    "Mudanca sem cobertura",
-    "Preco",
-    "Instabilidade/conexao",
-    "Insatisfacao com atendimento",
-  ],
-};
-
-const processSteps: Record<Sector, ProcessStep[]> = {
-  Comercial: [
-    {
-      name: "Saudacao e identificacao",
-      weight: 1,
-      status: "Cumpriu",
-      score: 9.4,
-      evidence: "00:12 - 'Boa tarde, meu nome e Ana, falo da Uai Fibra.'",
-      guidance: "Mantenha identificacao clara no primeiro contato.",
-    },
-    {
-      name: "Descoberta da necessidade",
-      weight: 2,
-      status: "Nao cumpriu",
-      score: 4.8,
-      evidence: "01:40 - Plano foi ofertado antes de validar uso e dor.",
-      guidance: "Pergunte uso, quantidade de pessoas e problema atual antes da oferta.",
-    },
-    {
-      name: "Validacao de cobertura",
-      weight: 2,
-      status: "Cumpriu",
-      score: 10,
-      evidence: "03:08 - Consulta de cobertura registrada no IXC simulado.",
-      guidance: "Continue confirmando endereco antes da proposta.",
-    },
-    {
-      name: "Tratamento de objecoes",
-      weight: 2,
-      status: "Incerto",
-      score: 6.6,
-      evidence: "06:18 - Cliente mencionou preco, mas nao houve comparacao de valor.",
-      guidance: "Conecte preco a beneficio e necessidade observada.",
-    },
-  ],
-  Atendimento: [
-    {
-      name: "Acolhimento e empatia",
-      weight: 1,
-      status: "Cumpriu",
-      score: 9.2,
-      evidence: "00:22 - Atendente reconheceu a frustracao do cliente.",
-      guidance: "Boa abertura; mantenha tom calmo.",
-    },
-    {
-      name: "Diagnostico e testes",
-      weight: 3,
-      status: "Cumpriu",
-      score: 8.6,
-      evidence: "02:31 - Teste de sinal e reinicio do roteador orientados.",
-      guidance: "Registre resultados do teste no protocolo.",
-    },
-    {
-      name: "Confirmacao de resolucao",
-      weight: 2,
-      status: "Nao cumpriu",
-      score: 4.2,
-      evidence: "08:10 - Atendimento encerrado sem perguntar se a conexao voltou.",
-      guidance: "Antes de encerrar, confirme se o problema do cliente foi resolvido.",
-    },
-    {
-      name: "Escalonamento ou OS",
-      weight: 2,
-      status: "Cumpriu",
-      score: 8.8,
-      evidence: "09:02 - OS 74821 aberta para visita tecnica.",
-      guidance: "Informe prazo e proxima etapa com clareza.",
-    },
-  ],
-  Retencao: [
-    {
-      name: "Motivo do cancelamento",
-      weight: 3,
-      status: "Cumpriu",
-      score: 9.1,
-      evidence: "00:54 - Cliente informou instabilidade recorrente.",
-      guidance: "Classifique motivo antes de propor desconto.",
-    },
-    {
-      name: "Consulta historico e OS",
-      weight: 2,
-      status: "Cumpriu",
-      score: 8.3,
-      evidence: "02:19 - Historico de 3 OS em 14 dias consultado.",
-      guidance: "Relacione visitas anteriores ao plano de acao.",
-    },
-    {
-      name: "Tratar causa antes do desconto",
-      weight: 3,
-      status: "Nao cumpriu",
-      score: 3.8,
-      evidence: "04:16 - Desconto ofertado sem plano tecnico para instabilidade.",
-      guidance: "Resolva a causa raiz antes de negociar preco.",
-    },
-    {
-      name: "Confirmar decisao e desfecho",
-      weight: 1,
-      status: "Cumpriu",
-      score: 8.9,
-      evidence: "08:44 - Cliente aceitou visita e retorno em 48h.",
-      guidance: "Registre compromisso e responsavel.",
-    },
-  ],
-};
-
 const pendingDecisions = [
   "Consulta de gravacoes depende do acesso SSH ao servidor PBX e das permissoes de leitura nos diretorios de chamadas.",
-  "Campos IXC e correlacao de OS dependem da integracao real.",
+  "Campos IXC e correlacao de OS dependem de uma integracao futura.",
   "Janela multicanal esta configurada em 24 horas e precisa validacao.",
   "OCR de documentos pessoais fica bloqueado na versao inicial por LGPD.",
   "Credenciais da Blip, OpenAI e PBX devem ser guardadas como segredo no ambiente de producao.",
@@ -496,7 +347,6 @@ const integrationFieldLabels: Record<string, string> = {
 const ptLabels: Record<string, string> = {
   Retencao: "Retenção",
   Ligacao: "Ligação",
-  Demonstracao: "Demonstração",
   Critico: "Crítico",
   Medio: "Médio",
   Atencao: "Atenção",
@@ -525,116 +375,6 @@ function ptLabel(value: string) {
   return ptLabels[value] ?? value;
 }
 
-function pseudoRandom(seed: number) {
-  const value = Math.sin(seed * 9301 + 49297) * 233280;
-  return value - Math.floor(value);
-}
-
-function pick<T>(items: T[], seed: number) {
-  return items[Math.floor(pseudoRandom(seed) * items.length) % items.length];
-}
-
-function generateConversations(): Conversation[] {
-  const rows: Conversation[] = [];
-  const today = new Date("2026-07-11T12:00:00-03:00");
-
-  for (let index = 0; index < 1000; index += 1) {
-    const sector = pick<Sector>(["Comercial", "Atendimento", "Retencao"], index + 2);
-    const channel = pick<Channel>(["WhatsApp", "Blip Chat", "Ligacao"], index + 7);
-    const attendant = attendantNames[index % attendantNames.length];
-    const team =
-      sector === "Comercial"
-        ? "Comercial Norte"
-        : sector === "Atendimento"
-          ? pick(["Suporte N1", "Qualidade"], index + 9)
-          : "Retencao";
-    const daysAgo = Math.floor(pseudoRandom(index + 11) * 90);
-    const start = new Date(today);
-    start.setDate(today.getDate() - daysAgo);
-    start.setHours(8 + Math.floor(pseudoRandom(index + 13) * 11));
-    start.setMinutes(Math.floor(pseudoRandom(index + 17) * 60));
-    const duration = 4 + Math.floor(pseudoRandom(index + 19) * 42);
-    const end = new Date(start.getTime() + duration * 60 * 1000);
-    const eligible =
-      !["Sem cobertura", "Contato invalido", "Cliente parou de responder"].includes(
-        pick(classificationBySector[sector], index + 23),
-      ) || pseudoRandom(index + 3) > 0.55;
-    const base = 3 + pseudoRandom(index + 29) * 7;
-    const score = eligible ? Number(base.toFixed(1)) : Number((4.5 + pseudoRandom(index) * 3).toFixed(1));
-    const adherence = eligible
-      ? Math.min(99, Math.round(score * 9.5 + pseudoRandom(index + 31) * 9))
-      : Math.round(42 + pseudoRandom(index + 32) * 30);
-    const classification = pick(classificationBySector[sector], index + 23);
-    const recurrences =
-      index % 57 === 0 ? 6 : index % 19 === 0 ? 3 : Math.floor(pseudoRandom(index + 37) * 2);
-    const hasCriticalAlert = score < 5.2 || recurrences >= 3 || index % 41 === 0;
-
-    rows.push({
-      id: `att-${String(index + 1).padStart(4, "0")}`,
-      protocol: `UAI-${String(93000 + index)}`,
-      start,
-      end,
-      client: index % 57 === 0 ? "Cliente com reincidencia alta" : `Cliente ${String(index + 1).padStart(4, "0")}`,
-      maskedPhone: `(**) *****-${String(1000 + (index * 37) % 8999)}`,
-      attendant,
-      team,
-      sector,
-      channel,
-      duration,
-      classification,
-      eligible,
-      ineligibleReason: eligible
-        ? "Elegivel para avaliacao"
-        : classification === "Sem cobertura"
-          ? "Lead sem cobertura nao penaliza conversao"
-          : "Interacao sem resposta suficiente do cliente",
-      score,
-      adherence,
-      sentiment:
-        hasCriticalAlert && score < 5.2
-          ? "Critico"
-          : recurrences >= 3
-            ? "Atencao"
-            : "Baixa tensao",
-      resolution:
-        sector === "Comercial"
-          ? classification === "Venda concluida"
-            ? "Resolvido"
-            : classification === "Lead potencial em andamento"
-              ? "Parcial"
-              : "Indeterminado"
-          : score > 7.5
-            ? "Resolvido"
-            : score > 5.5
-              ? "Parcial"
-              : "Nao resolvido",
-      recurrences,
-      alerts: hasCriticalAlert
-        ? [
-            score < 5.2 ? "Nota abaixo do limite" : "Alta reincidencia",
-            index % 41 === 0 ? "Baixa confianca da IA" : "Risco operacional",
-          ]
-        : [],
-      reviewStatus:
-        index % 31 === 0
-          ? "Contestado"
-          : index % 13 === 0
-            ? "Atribuido"
-            : index % 5 === 0
-              ? "Revisado"
-              : "Pendente",
-      confidence: Number((0.62 + pseudoRandom(index + 43) * 0.36).toFixed(2)),
-      processVersion: `${sector.toLowerCase()}-v${1 + (index % 3)}.${index % 4}`,
-      process: `Processo ${sector}`,
-      firstResponse: 1 + Math.floor(pseudoRandom(index + 47) * 18),
-      responseTime: 3 + Math.floor(pseudoRandom(index + 53) * 28),
-      isMultichannelCase: channel === "WhatsApp" || channel === "Blip Chat",
-    });
-  }
-
-  return rows.sort((a, b) => b.start.getTime() - a.start.getTime());
-}
-
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
@@ -659,6 +399,14 @@ function average(values: number[]) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+function hasRealOutcome(conversation: Conversation) {
+  const value = `${conversation.classification} ${conversation.resolution}`.toLowerCase();
+  if (/n[aã]o resolvid|nao resolvid|indeterminado|aguardando/.test(value)) return false;
+  if (conversation.sector === "Comercial") return /venda (fechada|conclu[ií]da)|contrata[cç][aã]o conclu[ií]da/.test(value);
+  if (conversation.sector === "Retencao") return /retid[oa]|cliente permaneceu/.test(value);
+  return /resolvid[oa]|solu[cç][aã]o confirmada/.test(value);
+}
+
 function trend(now: number, previous: number) {
   const delta = now - previous;
   return `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}`;
@@ -669,19 +417,17 @@ function buildAlerts(conversations: Conversation[]): AlertItem[] {
     .filter((conversation) => conversation.alerts.length > 0)
     .slice(0, 32)
     .map((conversation, index) => ({
-      id: `alert-${index + 1}`,
+      id: `analysis-${conversation.id}-${index + 1}`,
       type: ptLabel(conversation.alerts[0]),
       severity:
         conversation.score < 4.8 || conversation.recurrences >= 5
           ? "Critico"
           : conversation.score < 6
             ? "Alto"
-            : conversation.confidence < 0.72
-              ? "Medio"
-              : "Baixo",
-      owner: index % 3 === 0 ? "Gestor Suporte" : index % 3 === 1 ? "Qualidade" : "Comercial",
-      due: index % 2 === 0 ? "Hoje" : "Amanha",
-      status: index % 5 === 0 ? "Resolvido" : index % 3 === 0 ? "Reconhecido" : "Aberto",
+            : "Medio",
+      owner: "Não atribuído",
+      due: "Sem prazo",
+      status: "Aberto",
       evidence: `${conversation.protocol}: ${conversation.alerts.map(ptLabel).join(", ")}`,
       conversationId: conversation.id,
     }));
@@ -715,15 +461,14 @@ const operatorNavItems = [
 ];
 
 export default function Home() {
-  const demoConversations = useMemo(() => generateConversations(), []);
   const [importedConversations, setImportedConversations] = useState<Conversation[]>([]);
   const [reviewOverrides, setReviewOverrides] = useState<Record<string, ReviewStatus>>({});
   const conversations = useMemo(
-    () => [...importedConversations, ...demoConversations].map((conversation) => ({
+    () => importedConversations.map((conversation) => ({
       ...conversation,
       reviewStatus: reviewOverrides[conversation.id] ?? conversation.reviewStatus,
     })),
-    [demoConversations, importedConversations, reviewOverrides],
+    [importedConversations, reviewOverrides],
   );
   const alerts = useMemo(() => buildAlerts(conversations), [conversations]);
   const [requestedView, setActiveView] = useState("overview");
@@ -752,9 +497,9 @@ export default function Home() {
   const [channel, setChannel] = useState("Todos");
   const [search, setSearch] = useState("");
   const [onlyEligible, setOnlyEligible] = useState(false);
-  const [selectedId, setSelectedId] = useState(demoConversations[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState("");
   const [page, setPage] = useState(1);
-  const [loadingState, setLoadingState] = useState<"ready" | "loading" | "error" | "empty">("ready");
+  const [loadingState, setLoadingState] = useState<"ready" | "loading" | "error" | "empty">("loading");
   const [agentQuestion, setAgentQuestion] = useState("");
   const [agentReply, setAgentReply] = useState("");
   const [agentBusy, setAgentBusy] = useState(false);
@@ -764,7 +509,7 @@ export default function Home() {
   const [customPeriodOpen, setCustomPeriodOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [reviewDialogId, setReviewDialogId] = useState<string | null>(null);
-  const [reviewer, setReviewer] = useState("Qualidade");
+  const [reviewer, setReviewer] = useState("Não atribuído");
   const [reviewAssignmentNote, setReviewAssignmentNote] = useState("");
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
@@ -772,23 +517,7 @@ export default function Home() {
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
   const [managedAttendants, setManagedAttendants] = useState<ManagedAttendant[]>([]);
-  const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>([
-    {
-      id: 1,
-      name: "Atendimento - Suporte N1",
-      sector: "Atendimento",
-      status: "Publicado",
-      version: "v1.0",
-      objective: "Validar se o operador diagnosticou, registrou e confirmou a resolução do problema.",
-      instructions: "Considere cumprida uma etapa somente quando houver evidência explícita na conversa.",
-      channels: ["WhatsApp", "Blip Chat", "Ligacao"],
-      steps: [
-        { name: "Acolhimento", weight: 1, criterion: "Saudação, empatia e identificação do cliente." },
-        { name: "Confirmação de resolução", weight: 2, criterion: "Perguntar se o problema foi resolvido antes de encerrar." },
-      ],
-      documents: [],
-    },
-  ]);
+  const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>([]);
   const [integrationConfigs, setIntegrationConfigs] = useState<IntegrationConfig[]>([
     { provider: "Blip", status: "Nao configurado", fields: { source: "Carregando...", contractId: "Carregando...", botId: "Carregando...", credentialStatus: "Carregando...", ticketImport: "Carregando..." } },
     { provider: "OpenAI", status: "Nao configurado", fields: { model: "Carregando...", transcriptionModel: "Carregando...", apiKeyStatus: "Carregando..." } },
@@ -861,6 +590,7 @@ export default function Home() {
   useEffect(() => {
     if (authStatus !== "authenticated") return;
     const loadImported = () => {
+      setLoadingState("loading");
       fetch("/api/conversations/imported?limit=100")
         .then(async (response) => {
           if (!response.ok) throw new Error("Atendimentos Blip indisponiveis.");
@@ -874,8 +604,9 @@ export default function Home() {
             source: "Blip" as const,
           }));
           setImportedConversations(rows);
+          setLoadingState(rows.length ? "ready" : "empty");
         })
-        .catch(() => undefined);
+        .catch(() => setLoadingState("error"));
     };
     loadImported();
     window.addEventListener("blip-synchronized", loadImported);
@@ -971,11 +702,12 @@ export default function Home() {
   const selected = filtered.find((conversation) => conversation.id === selectedId) ?? filtered[0] ?? conversations[0];
 
   const trendData = useMemo(() => {
-    const buckets = new Map<string, { date: string; volume: number; scoreTotal: number; adherenceTotal: number }>();
+    const buckets = new Map<string, { date: string; volume: number; result: number; scoreTotal: number; adherenceTotal: number }>();
     filtered.forEach((conversation) => {
       const label = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(conversation.start);
-      const current = buckets.get(label) ?? { date: label, volume: 0, scoreTotal: 0, adherenceTotal: 0 };
+      const current = buckets.get(label) ?? { date: label, volume: 0, result: 0, scoreTotal: 0, adherenceTotal: 0 };
       current.volume += 1;
+      if (hasRealOutcome(conversation)) current.result += 1;
       current.scoreTotal += conversation.score;
       current.adherenceTotal += conversation.adherence;
       buckets.set(label, current);
@@ -986,6 +718,7 @@ export default function Home() {
       .map((bucket) => ({
         date: bucket.date,
         volume: bucket.volume,
+        resultado: bucket.result,
         nota: Number((bucket.scoreTotal / bucket.volume).toFixed(1)),
         aderencia: Math.round(bucket.adherenceTotal / bucket.volume),
       }));
@@ -1001,7 +734,7 @@ export default function Home() {
   }, [filtered]);
 
   const attendantRanking = useMemo(() => {
-    return attendantNames
+    return Array.from(new Set(filtered.map((conversation) => conversation.attendant).filter(Boolean)))
       .map((name) => {
         const rows = filtered.filter((conversation) => conversation.attendant === name && conversation.eligible);
         return {
@@ -1064,7 +797,7 @@ export default function Home() {
       retention: filtered.filter((row) => row.sector === "Retencao" && row.alerts.length).length,
       recurrence: filtered.filter((row) => row.recurrences >= 3).length,
       agents: attendantRanking.filter((row) => row.volume > 0).length,
-      operator: filtered.filter((row) => row.attendant === "Ana Costa" && row.reviewStatus !== "Revisado").length,
+      operator: filtered.filter((row) => row.reviewStatus !== "Revisado").length,
       alerts: unreadNotifications.length,
       tasks: tasks.filter((task) => task.status === "Pendente" || task.status === "Em andamento").length,
       processes: managedProcesses.filter((process) => process.status !== "Publicado").length,
@@ -1204,7 +937,7 @@ export default function Home() {
   const openNotification = (notification: (typeof notifications)[number]) => {
     setReadNotificationIds((ids) => Array.from(new Set([...ids, notification.id])));
     setNotificationsOpen(false);
-    if (notification.targetId.startsWith("att-")) setSelectedId(notification.targetId);
+    if (notification.targetId && notification.view !== "processes") setSelectedId(notification.targetId);
     setActiveView(notification.view);
     persistAction("mark_notification_read", "notification", notification.id, notification.title);
   };
@@ -1246,11 +979,6 @@ export default function Home() {
     setFocusedAlertId(alert.id);
     setActiveView("tasks");
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
-  };
-
-  const simulateLoading = (state: "loading" | "error" | "empty") => {
-    setLoadingState(state);
-    window.setTimeout(() => setLoadingState("ready"), 950);
   };
 
   if (authStatus === "loading") {
@@ -1439,14 +1167,14 @@ export default function Home() {
                 Apenas elegíveis
               </label>
             ) : null}
-            <button className="icon-button" onClick={() => simulateLoading("loading")} title="Atualizar">
+            <button className="icon-button" onClick={() => window.dispatchEvent(new Event("blip-synchronized"))} title="Atualizar dados da Blip">
               <RefreshCw size={16} />
             </button>
           </div>
         </div>
 
-        {loadingState !== "ready" ? (
-          <StatePanel state={loadingState} />
+        {["overview", "conversations", "agents", "kpis", "adherence", "recurrence", "alerts", "operator", "detail"].includes(activeView) && (loadingState !== "ready" || !filtered.length) ? (
+          <StatePanel state={loadingState === "ready" ? "empty" : loadingState} onRetry={() => window.dispatchEvent(new Event("blip-synchronized"))} />
         ) : (
           <div className="view-transition" key={`${activeView}-${operationalSector}`}>
             {activeView === "overview" && (
@@ -1545,7 +1273,7 @@ export default function Home() {
           <div className="modal-backdrop" role="presentation" onClick={() => setCustomPeriodOpen(false)}>
             <section className="date-modal" role="dialog" aria-modal="true" aria-label="Período customizado" onClick={(event) => event.stopPropagation()}>
               <header><div><strong>Período customizado</strong><small>Escolha a data inicial e final</small></div><button className="icon-button" onClick={() => setCustomPeriodOpen(false)} title="Fechar"><X size={17} /></button></header>
-              <div className="date-fields"><label>Data inicial<input type="date" defaultValue="2026-07-01" /></label><label>Data final<input type="date" defaultValue="2026-07-13" /></label></div>
+              <div className="date-fields"><label>Data inicial<input type="date" /></label><label>Data final<input type="date" /></label></div>
               <div className="form-actions"><button onClick={() => { setPeriod("Periodo customizado"); setCustomPeriodOpen(false); notify("Período aplicado", "Os indicadores foram atualizados para 01/07/2026 a 13/07/2026."); }}>Aplicar período</button></div>
             </section>
           </div>
@@ -1557,7 +1285,7 @@ export default function Home() {
                 <div><strong>Atribuir revisão</strong><small>Defina o responsável e deixe o contexto necessário.</small></div>
                 <button className="icon-button" onClick={() => setReviewDialogId(null)} title="Fechar"><X size={17} /></button>
               </header>
-              <label>Responsável<select value={reviewer} onChange={(event) => setReviewer(event.target.value)}><option>Qualidade</option><option>Gestor Suporte</option><option>Comercial</option></select></label>
+              <label>Responsável<select value={reviewer} onChange={(event) => setReviewer(event.target.value)}><option>Não atribuído</option>{managedUsers.filter((user) => user.status === "Ativo" && user.role !== "Operador").map((user) => <option key={user.id}>{user.name}</option>)}</select></label>
               <label>Orientação para a revisão<textarea value={reviewAssignmentNote} onChange={(event) => setReviewAssignmentNote(event.target.value)} placeholder="Ex.: conferir se a confirmação de resolução ocorreu antes do encerramento." /></label>
               <div className="form-actions"><button onClick={assignReview}><UserCheck size={16} /> Confirmar atribuição</button></div>
             </section>
@@ -1622,7 +1350,7 @@ function PasswordForm({
   );
 }
 
-function StatePanel({ state }: { state: "loading" | "error" | "empty" }) {
+function StatePanel({ state, onRetry }: { state: "loading" | "error" | "empty"; onRetry?: () => void }) {
   if (state === "loading") {
     return (
       <div className="grid skeleton-grid" role="status" aria-live="polite">
@@ -1639,10 +1367,10 @@ function StatePanel({ state }: { state: "loading" | "error" | "empty" }) {
       <h2>{state === "error" ? "Erro recuperavel na integracao" : "Nenhum resultado para os filtros"}</h2>
       <p>
         {state === "error"
-          ? "O conector simulado retornou falha temporaria. A fila preserva idempotencia e permite tentar novamente."
-          : "A busca nao encontrou atendimentos com estes filtros. Limpe filtros ou salve esta visualizacao vazia."}
+          ? "Não foi possível consultar os dados reais agora. Tente novamente em instantes."
+          : "Ainda não há atendimentos reais para estes filtros. Ajuste o período ou aguarde uma nova sincronização da Blip."}
       </p>
-      <button> Tentar novamente </button>
+      <button onClick={onRetry}>Tentar novamente</button>
     </section>
   );
 }
@@ -1659,7 +1387,7 @@ function Overview({
   onAlertClick,
 }: {
   onMetricClick: (label: string) => void;
-  trendData: Array<{ date: string; volume: number; nota: number; aderencia: number }>;
+  trendData: Array<{ date: string; volume: number; resultado: number; nota: number; aderencia: number }>;
   classificationData: Array<{ name: string; value: number }>;
   ranking: Array<{ name: string; team: string; volume: number; score: number; adherence: number; trend: string }>;
   alerts: AlertItem[];
@@ -1669,9 +1397,9 @@ function Overview({
   onAlertClick: (alertId: string) => void;
 }) {
   const eligible = rows.filter((row) => row.eligible);
-  const resolved = rows.filter((row) => row.resolution === "Resolvido");
-  const sales = rows.filter((row) => row.classification === "Venda concluida");
-  const retained = rows.filter((row) => row.classification === "Retido");
+  const resolved = rows.filter(hasRealOutcome);
+  const sales = rows.filter((row) => row.sector === "Comercial" && hasRealOutcome(row));
+  const retained = rows.filter((row) => row.sector === "Retencao" && hasRealOutcome(row));
   const recurrent = rows.filter((row) => row.recurrences >= 3);
   const contextualMetrics = sector === "Comercial"
     ? [
@@ -1695,19 +1423,23 @@ function Overview({
           { label: "Atendimentos recebidos", value: String(rows.length), detail: "Contatos de suporte no período.", formula: "contagem de atendimentos", icon: MessageCircle },
           { label: "Resolvidos", value: String(resolved.length), detail: "Resolvidos com evidência na conversa.", formula: "desfechos resolvidos", icon: CheckCircle2 },
           { label: "Taxa de resolução", value: percent((resolved.length / Math.max(rows.length, 1)) * 100), detail: "Resolução sobre atendimentos analisados.", formula: "resolvidos / analisados", icon: UserCheck },
-          { label: "Primeira resposta", value: `${Math.round(average(rows.map((row) => row.firstResponse)))} min`, detail: "Tempo até a primeira resposta humana.", formula: "média da primeira resposta", icon: Clock3 },
+          { label: "Primeira resposta", value: rows.length ? `${Math.round(average(rows.map((row) => row.firstResponse)))} min` : "Sem dados", detail: "Tempo até a primeira resposta humana.", formula: "média da primeira resposta", icon: Clock3 },
           { label: "Reincidências", value: String(recurrent.length), detail: "Clientes com 3 ou mais contatos em 14 dias.", formula: "casos reincidentes", icon: RefreshCw },
           { label: "Alertas de atendimento", value: String(alerts.length), detail: "Riscos operacionais em aberto.", formula: "alertas abertos", icon: AlertTriangle },
         ];
-  const contextChart = sector === "Comercial"
-    ? trendData.map((item) => ({ ...item, resultado: Math.max(0, Math.round(item.volume * 0.22 + item.nota / 3)) }))
-    : sector === "Atendimento"
-      ? trendData.map((item) => ({ ...item, resultado: Math.min(item.volume, Math.round(item.volume * (item.aderencia / 100))) }))
-      : trendData.map((item) => ({ ...item, resultado: Math.max(0, Math.round(item.volume * 0.38)) }));
+  const contextChart = trendData;
   const chartTitle = sector === "Comercial" ? "Leads e vendas por período" : sector === "Atendimento" ? "Atendimentos e resoluções por período" : "Retenções por período";
   const resultLabel = sector === "Comercial" ? "vendas" : sector === "Atendimento" ? "resoluções" : "retenções";
   const peopleTitle = sector === "Comercial" ? "Ranking de vendedores" : "Ranking de atendentes";
-  const steps = processSteps[sector].map((step, index) => [step.name, Math.max(42, Math.round(86 - step.weight * 8 - index * 5))] as [string, number]);
+  const stepScores = new Map<string, number[]>();
+  eligible.flatMap((row) => row.stepEvaluations).forEach((step) => {
+    const values = stepScores.get(step.name) ?? [];
+    values.push(step.score);
+    stepScores.set(step.name, values);
+  });
+  const steps = Array.from(stepScores.entries())
+    .map(([name, values]) => [name, Math.round(average(values) * 10)] as [string, number])
+    .sort((a, b) => a[1] - b[1]);
   return (
     <div className="stack">
       <section className="metric-grid">
@@ -1718,7 +1450,7 @@ function Overview({
               <span className="metric-icon">
                 <Icon size={18} />
               </span>
-              <small title={`Formula: ${metric.formula}. Fonte: dados de demo. Atualizado em 11/07/2026 11:54.`}>{metric.label}</small>
+              <small title={`Fórmula: ${metric.formula}. Fonte: atendimentos sincronizados e análises persistidas.`}>{metric.label}</small>
               <strong>{metric.value}</strong>
               <em>{metric.detail}</em>
             </button>
@@ -1788,6 +1520,7 @@ function Overview({
                 </span>
               </div>
             ))}
+            {!ranking.length ? <p className="empty-copy">Nenhum atendente possui análise elegível neste filtro.</p> : null}
           </div>
         </article>
 
@@ -1801,6 +1534,7 @@ function Overview({
                 <div><i style={{ width: `${value}%` }} /></div>
               </div>
             ))}
+            {!steps.length ? <p className="empty-copy">As etapas aparecerão após uma análise vinculada a um processo publicado.</p> : null}
           </div>
         </article>
 
@@ -1922,7 +1656,7 @@ function ConversationDetail({
   const [feedback, setFeedback] = useState("");
   const [reviewNote, setReviewNote] = useState("");
   const [ticketOpen, setTicketOpen] = useState(false);
-  const steps = processSteps[conversation.sector];
+  const steps = conversation.stepEvaluations;
 
   const sendAction = (action: string, note: string) => {
     fetch("/api/actions", {
@@ -1947,7 +1681,7 @@ function ConversationDetail({
           </div>
         </div>
         <div className="score-meter" style={{ "--score": `${conversation.score * 10}%` } as CSSProperties}>
-          <strong>{conversation.score.toFixed(1)}</strong>
+          <strong>{conversation.analysisStatus === "Concluida" ? conversation.score.toFixed(1) : "-"}</strong>
           <small>nota IA</small>
         </div>
         <div className="detail-actions">
@@ -2023,12 +1757,12 @@ function ConversationDetail({
         {tab === "summary" && (
           <div className="summary-grid">
             {[
-              ["Resumo", `Cliente buscou ${conversation.sector === "Comercial" ? "contratacao de internet" : conversation.sector === "Atendimento" ? "solucao para instabilidade" : "cancelamento ou renegociacao"}. Desfecho: ${conversation.resolution.toLowerCase()}.`],
-              ["Pontos fortes", "Atendente manteve linguagem clara, registrou protocolo e explicou proximos passos quando havia base no processo."],
-              ["Melhorias sugeridas", "Confirmar necessidade antes da oferta e validar resolucao antes do encerramento."],
-              ["Riscos e oportunidades", conversation.recurrences >= 3 ? "Cliente reincidente com risco de churn; recomenda-se contato ativo apos OS." : "Sem risco critico, mas ha oportunidade de coaching por etapa."],
-              ["Proxima acao", conversation.alerts.length ? "Atribuir revisao ao gestor e registrar feedback especifico." : "Marcar como revisado apos validacao amostral."],
-              ["Diagnostico de resolucao", conversation.resolution],
+              ["Resumo", conversation.summary || "Análise ainda não concluída para este atendimento."],
+              ["Pontos fortes", conversation.strengths.join(" ") || "Nenhum ponto forte foi registrado pela análise."],
+              ["Melhorias sugeridas", conversation.improvements.join(" ") || "Nenhuma melhoria foi registrada pela análise."],
+              ["Riscos e oportunidades", conversation.alerts.join(" ") || "Nenhum risco foi registrado pela análise."],
+              ["Próxima ação", conversation.improvements[0] || "Nenhuma ação foi recomendada pela análise."],
+              ["Diagnóstico de resolução", conversation.resolution],
             ].map(([title, body]) => (
               <div className="info-card" key={title}>
                 <h3>{title}</h3>
@@ -2042,16 +1776,14 @@ function ConversationDetail({
           <div className="step-list">
             {steps.map((step) => (
               <div className="step-card" key={step.name}>
-                <div>
-                  <h3>{step.name}</h3>
-                  <p>Peso {step.weight} - criterio versionado do processo {conversation.processVersion}</p>
-                </div>
+                <div><h3>{step.name}</h3><p>Resultado registrado na análise do processo {conversation.processVersion}</p></div>
                 <ScoreBadge score={step.score} />
                 <span className={`status ${step.status.replace(" ", "-").toLowerCase()}`}>{step.status}</span>
                 <p>{step.evidence}</p>
-                <small>{step.guidance}</small>
+                {step.guidance ? <small>{step.guidance}</small> : null}
               </div>
             ))}
+            {!steps.length ? <p className="empty-copy">Nenhuma avaliação por etapa foi registrada para este atendimento.</p> : null}
           </div>
         )}
 
@@ -2091,19 +1823,7 @@ function Transcript({ conversation }: { conversation: Conversation }) {
     };
   }, [conversation.id, conversation.source]);
 
-  const timestamp = (minutes: number) => new Date(conversation.start.getTime() + minutes * 60_000).toISOString();
-  const demoMessages: TranscriptMessage[] = [
-    { id: "system-1", role: "system", senderName: "Blip", contentType: "application/vnd.iris.ticket+json", text: "Atendimento encaminhado para a equipe e vinculado ao protocolo.", mediaUri: null, timestamp: timestamp(0), status: "Registrado" },
-    { id: "client-1", role: "client", senderName: conversation.client, contentType: "text/plain", text: conversation.sector === "Comercial" ? "Oi, gostaria de saber se a fibra da Uai atende meu endereco." : "Boa tarde. Minha internet caiu de novo e eu ja tive esse problema esta semana.", mediaUri: null, timestamp: timestamp(1), status: "Recebida" },
-    { id: "agent-1", role: "attendant", senderName: conversation.attendant, contentType: "text/plain", text: `Ola! Eu sou ${conversation.attendant}. Vou consultar seu cadastro e acompanhar o atendimento com voce.`, mediaUri: null, timestamp: timestamp(2), status: "Consumida" },
-    { id: "client-2", role: "client", senderName: conversation.client, contentType: "text/plain", text: conversation.sector === "Comercial" ? "Somos quatro pessoas e usamos bastante para trabalho e streaming." : "As luzes do roteador estao acesas, mas nenhum aparelho consegue navegar.", mediaUri: null, timestamp: timestamp(3), status: "Recebida" },
-    { id: "agent-2", role: "attendant", senderName: conversation.attendant, contentType: "text/plain", text: "Entendi. Vou validar o sinal, o historico do protocolo e fazer alguns testes antes de definir o proximo passo.", mediaUri: null, timestamp: timestamp(5), status: "Consumida" },
-    { id: "client-3", role: "client", senderName: conversation.client, contentType: "audio/ogg", text: "Audio de 00:18", mediaUri: null, timestamp: timestamp(6), status: "Recebida" },
-    { id: "agent-3", role: "attendant", senderName: conversation.attendant, contentType: "text/plain", text: "Registrei a tratativa e o prazo. Antes de encerrar, consegue confirmar se o acesso voltou ao normal?", mediaUri: null, timestamp: timestamp(9), status: "Consumida" },
-    { id: "client-4", role: "client", senderName: conversation.client, contentType: "text/plain", text: "Voltou sim. Vou acompanhar e retorno pelo protocolo se acontecer novamente.", mediaUri: null, timestamp: timestamp(10), status: "Recebida" },
-    { id: "system-2", role: "system", senderName: "Blip", contentType: "application/vnd.iris.ticket+json", text: "Atendimento finalizado pelo atendente.", mediaUri: null, timestamp: timestamp(11), status: "Registrado" },
-  ];
-  const messages = importedMessages.length ? importedMessages : demoMessages;
+  const messages = importedMessages;
   const timeLabel = (value: string) => {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(date);
@@ -2117,7 +1837,7 @@ function Transcript({ conversation }: { conversation: Conversation }) {
           <strong>{conversation.client}</strong>
           <span>{conversation.channel} - protocolo {conversation.protocol}</span>
         </div>
-        <span className="chat-source"><Database size={14} /> {conversation.source === "Blip" ? "Sincronizado da Blip" : "Exemplo de transcricao"}</span>
+        <span className="chat-source"><Database size={14} /> Sincronizado da Blip</span>
       </header>
       <div className="chat-context-strip">
         <span><UserCheck size={14} /> {conversation.attendant}</span>
@@ -2127,6 +1847,7 @@ function Transcript({ conversation }: { conversation: Conversation }) {
       <div className="chat-thread" aria-live="polite">
         <div className="chat-day-separator"><span>{formatDate(conversation.start)}</span></div>
         {loading ? <div className="chat-loading">Carregando historico da Blip...</div> : null}
+        {!loading && !messages.length ? <div className="chat-loading">Nenhuma mensagem foi sincronizada para este ticket.</div> : null}
         {!loading && messages.map((message) => {
           if (message.role === "system") {
             return <div className="chat-system-event" key={message.id}><span>{message.text}</span><time>{timeLabel(message.timestamp)}</time></div>;
@@ -2141,13 +1862,9 @@ function Transcript({ conversation }: { conversation: Conversation }) {
                 <strong>{message.role === "attendant" ? message.senderName || conversation.attendant : message.senderName || conversation.client}</strong>
                 {isAudio ? (
                   <div className="chat-audio-block">
-                    {conversation.source === "Blip" ? (
-                      <audio controls preload="none" src={`/api/conversations/audio?messageId=${encodeURIComponent(message.id)}`}>
-                        Seu navegador não conseguiu reproduzir este áudio.
-                      </audio>
-                    ) : (
-                      <div className="chat-audio"><button className="icon-button" title="Reproduzir áudio"><Play size={15} /></button><i><span /></i><small>Áudio demonstrativo</small></div>
-                    )}
+                    <audio controls preload="none" src={`/api/conversations/audio?messageId=${encodeURIComponent(message.id)}`}>
+                      Seu navegador não conseguiu reproduzir este áudio.
+                    </audio>
                     <div className={`chat-audio-transcript ${hasAudioTranscript ? "ready" : "pending"}`}>
                       <strong>{hasAudioTranscript ? "Transcrição" : "Transcrição pendente"}</strong>
                       <p>{hasAudioTranscript ? audioTranscript : "O áudio está na fila de transcrição da supervisão."}</p>
@@ -2173,23 +1890,25 @@ function Transcript({ conversation }: { conversation: Conversation }) {
 }
 
 function Journey({ conversation }: { conversation: Conversation }) {
+  const events = [
+    [formatDate(conversation.start), conversation.channel, `Atendimento iniciado na Blip com o protocolo ${conversation.protocol}.`],
+    [formatDate(conversation.end), conversation.channel, `Ticket encerrado com status ${conversation.ticketStatus}.`],
+    ...(conversation.analyzedAt
+      ? [[formatDate(new Date(conversation.analyzedAt)), "OpenAI", `Análise concluída com a classificação ${conversation.classification}.`]]
+      : []),
+  ];
   return (
     <div className="timeline">
-      {[
-        ["D-13", "WhatsApp", "Cliente relatou lentidão e recebeu orientação inicial."],
-        ["D-08", "Ligacao", "OS aberta após testes. Visita técnica pendente."],
-        ["D-03", "WhatsApp", "Cliente retornou sem resolução percebida."],
-        ["Hoje", conversation.channel, `Atendimento atual classificado como ${conversation.classification}.`],
-      ].map(([date, channel, text]) => (
-        <div key={`${date}-${channel}`}>
+      {events.map(([date, channel, text], index) => (
+        <div key={`${date}-${channel}-${index}`}>
           <span>{date}</span>
           <strong>{channel}</strong>
           <p>{text}</p>
         </div>
       ))}
       <aside className="risk-box">
-        <strong>Score de risco explicavel: {conversation.recurrences >= 3 ? "alto" : "moderado"}</strong>
-        <p>Baseado em {conversation.recurrences} contatos em 14 dias, status de resolucao e existencia de OS.</p>
+        <strong>Reincidência</strong>
+        <p>{conversation.recurrences > 0 ? `${conversation.recurrences} contatos relacionados foram identificados.` : "Ainda não há correlação real de reincidência registrada para este cliente."}</p>
       </aside>
     </div>
   );
@@ -2199,13 +1918,13 @@ function Audit({ conversation }: { conversation: Conversation }) {
   return (
     <div className="audit-grid">
       {[
-        ["Fontes", "Blip, PBX simulado e IXC simulado"],
-        ["IDs externos", `${conversation.protocol}, ramal-22, blip-thread-${conversation.id}`],
-        ["Versao do processo", conversation.processVersion],
-        ["Modelo/prompt", "avaliador-v1.4 / schema qa-evaluation-v2"],
-        ["Processamento", "2026-07-11 11:54 BRT"],
-        ["Confianca", `${Math.round(conversation.confidence * 100)}%`],
-        ["Revisoes", conversation.reviewStatus],
+        ["Fonte", "Blip"],
+        ["ID externo", conversation.id],
+        ["Processo", conversation.processVersion],
+        ["Modelo", conversation.analysisModel || "Análise pendente"],
+        ["Processamento", conversation.analyzedAt ? formatDate(new Date(conversation.analyzedAt)) : "Análise pendente"],
+        ["Confiança", conversation.confidence > 0 ? `${Math.round(conversation.confidence * 100)}%` : "Não calculada"],
+        ["Revisão", conversation.reviewStatus],
         ["LGPD", "Telefone e dados pessoais mascarados neste perfil"],
       ].map(([label, value]) => (
         <div className="info-card" key={label}>
@@ -2290,8 +2009,9 @@ function Agents({ ranking, rows, sector }: { ranking: AgentRankingRow[]; rows: C
   const selected = ranking.find((row) => row.name === selectedName) ?? ranking[0];
   const personLabel = sector === "Comercial" ? "vendedor" : "atendente";
   const selectedRows = rows.filter((row) => row.attendant === selected?.name);
-  const resolved = selectedRows.filter((row) => row.resolution === "Resolvido").length;
-  const sales = selectedRows.filter((row) => row.classification === "Venda concluida").length;
+  const resolved = selectedRows.filter(hasRealOutcome).length;
+  const sales = selectedRows.filter((row) => row.sector === "Comercial" && hasRealOutcome(row)).length;
+  const feedback = Array.from(new Set(selectedRows.flatMap((row) => row.improvements).filter(Boolean))).slice(0, 3).join(" ");
   return (
     <section className="people-workspace">
       <article className="panel people-list-panel">
@@ -2305,21 +2025,21 @@ function Agents({ ranking, rows, sector }: { ranking: AgentRankingRow[]; rows: C
               <ChevronRight size={16} />
             </button>
           ))}
+          {!ranking.length ? <p className="empty-copy">Nenhum profissional possui atendimento analisado neste filtro.</p> : null}
         </div>
       </article>
       <article className="panel person-detail-panel" key={selected?.name}>
-        <PanelTitle icon={UserCheck} title={selected?.name ?? (sector === "Comercial" ? "Vendedor" : "Atendente")} subtitle={`Resumo individual do ${personLabel} no período selecionado.`} />
-        <div className="person-score-row">
-          <div><small>Nota consolidada</small><strong>{selected?.score.toFixed(1) ?? "0.0"}</strong><span className="positive">{selected?.trend ?? "0.0"} no período</span></div>
-          <MiniStat label="Aderência" value={percent(selected?.adherence ?? 0)} />
-          <MiniStat label={sector === "Comercial" ? "Vendas" : "Resolvidos"} value={String(sector === "Comercial" ? sales : resolved)} />
-          <MiniStat label="Volume analisado" value={String(selectedRows.length)} />
-        </div>
-        <div className="person-progress"><span><strong>{sector === "Comercial" ? "Conversão" : "Taxa de resolução"}</strong><b>{percent(((sector === "Comercial" ? sales : resolved) / Math.max(selectedRows.length, 1)) * 100)}</b></span><div><i style={{ width: `${Math.min(100, ((sector === "Comercial" ? sales : resolved) / Math.max(selectedRows.length, 1)) * 100)}%` }} /></div></div>
-        <div className="info-card wide contextual-feedback">
-          <h3>Feedback continuo</h3>
-          <p>{sector === "Comercial" ? "Boa evolução na apresentação de planos. Priorize a descoberta da necessidade antes da oferta e registre o motivo quando o lead não avançar." : "Boa evolução no acolhimento e diagnóstico. Reforce a confirmação de resolução antes de encerrar e informe claramente o próximo passo ao cliente."}</p>
-        </div>
+        {selected ? <>
+          <PanelTitle icon={UserCheck} title={selected.name} subtitle={`Resumo individual do ${personLabel} no período selecionado.`} />
+          <div className="person-score-row">
+            <div><small>Nota consolidada</small><strong>{selected.score.toFixed(1)}</strong><span className="positive">{selected.trend} no período</span></div>
+            <MiniStat label="Aderência" value={percent(selected.adherence)} />
+            <MiniStat label={sector === "Comercial" ? "Vendas" : "Resolvidos"} value={String(sector === "Comercial" ? sales : resolved)} />
+            <MiniStat label="Volume analisado" value={String(selectedRows.length)} />
+          </div>
+          <div className="person-progress"><span><strong>{sector === "Comercial" ? "Conversão" : "Taxa de resolução"}</strong><b>{percent(((sector === "Comercial" ? sales : resolved) / Math.max(selectedRows.length, 1)) * 100)}</b></span><div><i style={{ width: `${Math.min(100, ((sector === "Comercial" ? sales : resolved) / Math.max(selectedRows.length, 1)) * 100)}%` }} /></div></div>
+          <div className="info-card wide contextual-feedback"><h3>Feedback contínuo</h3><p>{feedback || "Nenhum feedback contínuo foi registrado nas análises deste período."}</p></div>
+        </> : <div className="task-editor-empty"><Users size={30} /><strong>Sem dados para exibir</strong><p>O resumo será liberado quando houver uma análise real elegível.</p></div>}
       </article>
     </section>
   );
@@ -2335,9 +2055,9 @@ function Kpis({
   sector: Sector;
 }) {
   const eligible = rows.filter((row) => row.eligible);
-  const sales = rows.filter((row) => row.classification === "Venda concluida");
-  const resolved = rows.filter((row) => row.resolution === "Resolvido");
-  const retained = rows.filter((row) => row.classification === "Retido");
+  const sales = rows.filter((row) => row.sector === "Comercial" && hasRealOutcome(row));
+  const resolved = rows.filter((row) => row.sector === "Atendimento" && hasRealOutcome(row));
+  const retained = rows.filter((row) => row.sector === "Retencao" && hasRealOutcome(row));
   const recurrent = rows.filter((row) => row.recurrences >= 3);
   const cards = sector === "Comercial"
     ? [
@@ -2364,7 +2084,7 @@ function Kpis({
     const date = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(row.start);
     const bucket = buckets.get(date) ?? { date, volume: 0, resultado: 0, adherenceTotal: 0 };
     bucket.volume += 1;
-    bucket.resultado += sector === "Comercial" ? Number(row.classification === "Venda concluida") : sector === "Retencao" ? Number(row.classification === "Retido") : Number(row.resolution === "Resolvido");
+    bucket.resultado += Number(hasRealOutcome(row));
     bucket.adherenceTotal += row.adherence;
     buckets.set(date, bucket);
   });
@@ -2406,40 +2126,9 @@ function Kpis({
 
 function Classifications({ sector, onNotify }: { sector: Sector; onNotify: (title: string, body: string) => void }) {
   const [itemsBySector, setItemsBySector] = useState<Record<Sector, ManagedClassification[]>>({
-    Atendimento: [
-      { value: "agendamento_realizado", label: "Agendamento realizado", description: "Visita tecnica, mudanca de local ou segundo ponto agendados com data e responsavel confirmados.", active: true, nonScore: false, resolved: true },
-      { value: "canal_errado", label: "Canal errado", description: "Solicitacao destinada a outro setor e corretamente encaminhada.", active: true, nonScore: true, resolved: false },
-      { value: "customer_abandoned", label: "Cliente nao retornou", description: "Cliente deixou de responder antes da confirmacao de resolucao.", active: true, nonScore: true, resolved: false },
-      { value: "cobranca_os_respondida", label: "Cobranca de O.S respondida", description: "Prazo ou situacao da ordem de servico foi consultado e informado adequadamente.", active: true, nonScore: false, resolved: true },
-      { value: "escalated_other_sector", label: "Encaminhado para outro setor", description: "Assunto fora do escopo tecnico foi transferido com contexto suficiente.", active: true, nonScore: true, resolved: false },
-      { value: "escalated_retention", label: "Encaminhado para retencao", description: "Sinal de cancelamento foi identificado e encaminhado conforme processo.", active: true, nonScore: false, resolved: true },
-      { value: "technical_disconnection", label: "Falha tecnica do canal", description: "Atendimento interrompido por queda do WhatsApp, WebChat ou conexao do cliente.", active: true, nonScore: true, resolved: false },
-      { value: "inatividade_sem_sinalizacao", label: "Inatividade sem sinalizacao", description: "Conversa ficou inativa sem orientacao clara sobre o proximo passo.", active: true, nonScore: false, resolved: false },
-      { value: "unresolved", label: "Nao resolvido", description: "Diagnostico ou procedimento nao resolveu a solicitacao do cliente.", active: true, nonScore: false, resolved: false },
-      { value: "os_aberta", label: "O.S aberta", description: "Ordem de servico registrada e proximos passos informados ao cliente.", active: true, nonScore: false, resolved: true },
-      { value: "problema_massivo", label: "Problema massivo na rede", description: "Incidente geral afetando varios clientes, fora da responsabilidade individual.", active: true, nonScore: true, resolved: false },
-      { value: "resolved", label: "Resolvido", description: "Problema resolvido na conversa e confirmado pelo cliente.", active: true, nonScore: false, resolved: true },
-      { value: "bot_only", label: "Sem atendimento humano", description: "Conversa finalizada ainda na triagem automatica.", active: true, nonScore: true, resolved: false },
-      { value: "senha_alterada", label: "Senha alterada", description: "Troca de senha concluida e reconexao orientada ao cliente.", active: true, nonScore: false, resolved: true },
-    ],
-    Comercial: [
-      { value: "won", label: "Venda fechada", description: "Cliente concluiu a contratacao com sucesso.", active: true, nonScore: false, resolved: true },
-      { value: "lead_active", label: "Lead potencial em andamento", description: "Negociacao ativa com proximo contato definido.", active: true, nonScore: false, resolved: false },
-      { value: "price_objection", label: "Cliente achou caro", description: "Negociacao nao avancou por objecao de preco.", active: true, nonScore: false, resolved: false },
-      { value: "no_coverage", label: "Sem cobertura na regiao", description: "Endereco ainda nao atendido pela Uai Telecom.", active: true, nonScore: true, resolved: false },
-      { value: "competitor", label: "Foi para concorrente", description: "Cliente decidiu contratar outro provedor.", active: true, nonScore: false, resolved: false },
-      { value: "ghost", label: "Cliente parou de responder", description: "Lead interrompeu a conversa sem desfecho.", active: true, nonScore: false, resolved: false },
-      { value: "invalid_contact", label: "Contato invalido", description: "Numero ou contato nao permitiu continuidade.", active: true, nonScore: true, resolved: false },
-      { value: "no_interest", label: "Sem interesse", description: "Cliente informou que nao deseja contratar no momento.", active: true, nonScore: false, resolved: false },
-    ],
-    Retencao: [
-      { value: "retained", label: "Cliente retido", description: "Cliente permaneceu apos tratamento da causa e confirmacao.", active: true, nonScore: false, resolved: true },
-      { value: "cancelled", label: "Cancelamento concluido", description: "Cancelamento confirmado apos todas as etapas aplicaveis.", active: true, nonScore: false, resolved: true },
-      { value: "technical_return", label: "Retorno tecnico agendado", description: "Causa tecnica sera tratada antes de nova negociacao.", active: true, nonScore: false, resolved: true },
-      { value: "price", label: "Motivo preco", description: "Valor foi o principal motivo de intencao de cancelamento.", active: true, nonScore: false, resolved: false },
-      { value: "instability", label: "Instabilidade recorrente", description: "Problemas de conexao motivaram a solicitacao.", active: true, nonScore: false, resolved: false },
-      { value: "change_no_coverage", label: "Mudanca sem cobertura", description: "Novo endereco nao possui disponibilidade de rede.", active: true, nonScore: true, resolved: false },
-    ],
+    Atendimento: [],
+    Comercial: [],
+    Retencao: [],
   });
   const items = itemsBySector[sector];
   const [draft, setDraft] = useState({ value: "", label: "", description: "" });
@@ -2456,7 +2145,7 @@ function Classifications({ sector, onNotify }: { sector: Sector; onNotify: (titl
       <article className="classification-info"><div><strong>Como a IA usa as classificações de {sector}?</strong><p>A cada análise, a IA recebe somente as regras ativas deste contexto e escolhe exatamente uma. Desative sem excluir para preservar o histórico.</p></div><span><b>Resolvido</b> soma na taxa de resolução<br /><b>Non-Score</b> fica fora dos KPIs</span></article>
       <div className="kpi-strip classification-stats"><MiniStat label="Total" value={String(items.length)} /><MiniStat label="Ativas" value={String(items.filter((item) => item.active).length)} /><MiniStat label="Resolvidas" value={String(items.filter((item) => item.resolved).length)} /><MiniStat label="Non-Score" value={String(items.filter((item) => item.nonScore).length)} /></div>
       <article className="panel classification-create"><PanelTitle icon={Plus} title={`Nova classificação de ${ptLabel(sector)}`} subtitle="Cadastre uma regra para as próximas análises deste contexto." /><input placeholder="valor_chave" value={draft.value} onChange={(event) => setDraft((current) => ({ ...current, value: event.target.value }))} /><input placeholder="Nome da classificação" value={draft.label} onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))} /><input placeholder="Descrição para orientar a IA" value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /><button onClick={addClassification}><Plus size={16} /> Adicionar</button></article>
-      <article className="panel classification-table"><header><span>Valor</span><span>Nome</span><span>Descrição</span><span>Ativa</span></header>{items.map((item) => <div key={item.value}><code>{item.value}</code><span><strong>{item.label}</strong><span className="classification-badges">{item.resolved ? <small className="resolved-badge">Resolvido</small> : null}{item.nonScore ? <small>Non-Score</small> : null}</span></span><p>{item.description}</p><button className={`switch ${item.active ? "on" : ""}`} onClick={() => { setItemsBySector((current) => ({ ...current, [sector]: current[sector].map((entry) => entry.value === item.value ? { ...entry, active: !entry.active } : entry) })); onNotify(item.active ? "Classificação desativada" : "Classificação ativada", item.label); }} aria-label={`${item.active ? "Desativar" : "Ativar"} ${item.label}`}><span /></button></div>)}</article>
+      <article className="panel classification-table"><header><span>Valor</span><span>Nome</span><span>Descrição</span><span>Ativa</span></header>{items.map((item) => <div key={item.value}><code>{item.value}</code><span><strong>{item.label}</strong><span className="classification-badges">{item.resolved ? <small className="resolved-badge">Resolvido</small> : null}{item.nonScore ? <small>Non-Score</small> : null}</span></span><p>{item.description}</p><button className={`switch ${item.active ? "on" : ""}`} onClick={() => { setItemsBySector((current) => ({ ...current, [sector]: current[sector].map((entry) => entry.value === item.value ? { ...entry, active: !entry.active } : entry) })); onNotify(item.active ? "Classificação desativada" : "Classificação ativada", item.label); }} aria-label={`${item.active ? "Desativar" : "Ativar"} ${item.label}`}><span /></button></div>)}{!items.length ? <p className="empty-copy">Nenhuma classificação real foi cadastrada para este contexto.</p> : null}</article>
     </section>
   );
 }
@@ -2465,6 +2154,7 @@ function OperatorPanel({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: st
   const eligible = rows.filter((row) => row.eligible);
   const weakRows = eligible.filter((row) => row.score < 6.5).slice(0, 5);
   const goodRows = eligible.filter((row) => row.score >= 8).slice(0, 5);
+  const feedbacks = Array.from(new Set(eligible.flatMap((row) => row.improvements).filter(Boolean))).slice(0, 6);
 
   return (
     <section className="stack">
@@ -2485,10 +2175,11 @@ function OperatorPanel({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: st
             {goodRows.map((row) => (
               <button className="case-card" key={row.id} onClick={() => onOpen(row.id)}>
                 <span><strong>{row.protocol}</strong><small>{row.classification}</small></span>
-                <span>Boa condução<small>{ptLabel(row.channel)} - {formatDate(row.start)}</small></span>
+                <span>{row.strengths[0] || "Análise positiva registrada"}<small>{ptLabel(row.channel)} - {formatDate(row.start)}</small></span>
                 <ScoreBadge score={row.score} />
               </button>
             ))}
+            {!goodRows.length ? <p className="empty-copy">Nenhum atendimento analisado atingiu este recorte.</p> : null}
           </div>
         </article>
 
@@ -2497,11 +2188,12 @@ function OperatorPanel({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: st
           <div className="cards-list">
             {weakRows.map((row) => (
               <button className="case-card" key={row.id} onClick={() => onOpen(row.id)}>
-                <span><strong>{row.protocol}</strong><small>{row.alerts[0] ?? "Etapa com baixa aderencia"}</small></span>
+                <span><strong>{row.protocol}</strong><small>{row.improvements[0] || row.alerts[0] || "Sem apontamento registrado"}</small></span>
                 <span>{ptLabel(row.resolution)}<small>{row.ineligibleReason}</small></span>
                 <ScoreBadge score={row.score} />
               </button>
             ))}
+            {!weakRows.length ? <p className="empty-copy">Nenhum ponto de correção foi registrado neste recorte.</p> : null}
           </div>
         </article>
       </section>
@@ -2509,18 +2201,8 @@ function OperatorPanel({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: st
       <article className="panel">
         <PanelTitle icon={MessageCircle} title="Feedbacks pendentes" subtitle="Cada item aponta volume e evidência, sem comparação punitiva." />
         <div className="summary-grid">
-          <div className="info-card">
-            <h3>Confirmar resolução</h3>
-            <p>Em 4 de 11 atendimentos elegíveis, a conversa encerrou sem confirmar se o cliente ficou atendido.</p>
-          </div>
-          <div className="info-card">
-            <h3>Registrar próximo passo</h3>
-            <p>Quando abriu OS, informe prazo e canal de retorno. Evidência em atendimentos com nota abaixo de 7.</p>
-          </div>
-          <div className="info-card">
-            <h3>Evolução</h3>
-            <p>Houve melhora na saudação e identificação em relação ao período anterior.</p>
-          </div>
+          {feedbacks.map((feedback, index) => <div className="info-card" key={feedback}><h3>Ponto de melhoria {index + 1}</h3><p>{feedback}</p></div>)}
+          {!feedbacks.length ? <p className="empty-copy">A análise ainda não registrou feedbacks para este operador.</p> : null}
         </div>
       </article>
     </section>
@@ -2528,22 +2210,25 @@ function OperatorPanel({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: st
 }
 
 function Adherence({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: string) => void }) {
-  const names = ["Saudacao", "Diagnostico", "Confirmacao", "Registro", "Escalonamento"];
+  const eligible = rows.filter((row) => row.eligible && row.stepEvaluations.length);
+  const names = Array.from(new Set(eligible.flatMap((row) => row.stepEvaluations.map((step) => step.name))));
+  const attendants = Array.from(new Set(eligible.map((row) => row.attendant))).slice(0, 10);
   return (
     <section className="panel">
       <PanelTitle icon={ClipboardCheck} title="Heatmap de aderência" subtitle="Agregado apenas com atendimentos elegíveis e aplicáveis." />
       <div className="heatmap">
-        {attendantNames.slice(0, 10).map((name, rowIndex) => (
+        {attendants.map((name) => (
           <div className="heat-row" key={name}>
             <strong>{name}</strong>
-            {names.map((step, cellIndex) => {
-              const value = 45 + Math.round(pseudoRandom(rowIndex * 7 + cellIndex) * 52);
-              const intensity = 20 + Math.round(((value - 45) / 52) * 55);
+            {names.map((step) => {
+              const matchingRows = eligible.filter((row) => row.attendant === name && row.stepEvaluations.some((item) => item.name === step));
+              const value = Math.round(average(matchingRows.flatMap((row) => row.stepEvaluations.filter((item) => item.name === step).map((item) => item.score))) * 10);
+              const intensity = Math.max(12, Math.min(75, Math.round(value * 0.75)));
               return (
                 <button
                   key={step}
                   style={{ "--heat-level": `${intensity}%` } as CSSProperties}
-                  onClick={() => onOpen(rows[rowIndex + cellIndex]?.id ?? rows[0]?.id)}
+                  onClick={() => matchingRows[0] && onOpen(matchingRows[0].id)}
                   title={`${step}: ${value}%`}
                 >
                   {value}%
@@ -2552,6 +2237,7 @@ function Adherence({ rows, onOpen }: { rows: Conversation[]; onOpen: (id: string
             })}
           </div>
         ))}
+        {!attendants.length ? <p className="empty-copy">Nenhuma análise por etapa está disponível para este filtro.</p> : null}
       </div>
     </section>
   );
@@ -2605,6 +2291,7 @@ function AlertsCenter({
   const criticalCount = alerts.filter((alert) => alert.severity === "Critico").length;
   const positiveCount = alerts.filter((alert) => alert.severity === "Baixo").length;
   const negativeCount = Math.max(0, alerts.length - positiveCount);
+  const alertOwners = Array.from(new Set(alerts.map((alert) => alert.owner).filter(Boolean)));
 
   return (
     <section className="stack alerts-workspace">
@@ -2618,7 +2305,7 @@ function AlertsCenter({
         <select aria-label="Origem do alerta"><option>Todas origens</option><option>Auditor IA</option><option>Reincidencia</option><option>Qualidade</option></select>
         <select aria-label="Polaridade"><option>Todas polaridades</option><option>Positiva</option><option>Negativa</option></select>
         <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)} aria-label="Severidade"><option>Todas severidades</option><option value="Critico">Crítico</option><option>Alto</option><option value="Medio">Médio</option><option>Baixo</option></select>
-        <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} aria-label="Operador"><option>Todos operadores</option><option>Gestor Suporte</option><option>Qualidade</option><option>Comercial</option></select>
+        <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} aria-label="Operador"><option>Todos operadores</option>{alertOwners.map((owner) => <option key={owner}>{owner}</option>)}</select>
       </div>
       <div className="alerts-tabs" role="tablist">
         {(["Ativos", "Vistos", "Descartados"] as const).map((tab) => <button key={tab} role="tab" aria-selected={alertTab === tab} className={alertTab === tab ? "active" : ""} onClick={() => setAlertTab(tab)}>{tab}</button>)}
@@ -2676,7 +2363,7 @@ function createEmptyTaskDraft(): TaskDraft {
   return {
     title: "",
     description: "",
-    owner: "Qualidade",
+    owner: "Não atribuído",
     priority: "Media",
     status: "Pendente",
     dueDate: dueDate.toISOString().slice(0, 10),
@@ -2723,7 +2410,7 @@ function TasksWorkspace({
   const openTasks = tasks.filter((task) => task.status === "Pendente" || task.status === "Em andamento");
   const overdueTasks = openTasks.filter((task) => task.dueDate && task.dueDate < today);
   const resolvedTasks = tasks.filter((task) => task.status === "Resolvida");
-  const owners = Array.from(new Set(["Qualidade", "Gestor Suporte", "Atendimento", "Comercial", ...tasks.map((task) => task.owner)]));
+  const owners = Array.from(new Set(["Não atribuído", ...tasks.map((task) => task.owner).filter(Boolean)]));
   const visibleTasks = tasks.filter((task) => {
     const normalizedSearch = search.trim().toLowerCase();
     const matchesSearch = !normalizedSearch || `${task.title} ${task.description} ${task.owner} ${task.sourceTitle}`.toLowerCase().includes(normalizedSearch);
@@ -2875,237 +2562,6 @@ function TasksWorkspace({
       </div>
     </section>
   );
-}
-
-function normalizeAgentQuestion(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
-
-function buildCommercialAgentAnswer(
-  question: string,
-  rows: Conversation[],
-  ranking: AgentRankingRow[],
-  alerts: AlertItem[],
-  period: string,
-): Omit<AgentMessage, "id" | "role"> {
-  const normalized = normalizeAgentQuestion(question);
-  const commercialRows = rows.filter((row) => row.sector === "Comercial");
-  const eligibleLeads = commercialRows.filter((row) => row.eligible);
-  const sales = commercialRows.filter((row) => row.classification === "Venda concluida");
-  const conversion = (sales.length / Math.max(eligibleLeads.length, 1)) * 100;
-  const averageScore = average(eligibleLeads.map((row) => row.score));
-  const averageAdherence = average(eligibleLeads.map((row) => row.adherence));
-  const criticalCases = commercialRows.filter((row) => row.alerts.length > 0 && row.score < 6);
-  const lowAdherence = commercialRows.filter((row) => row.adherence < 70);
-  const baseSources = [
-    `${commercialRows.length} atendimentos comerciais no filtro ${period.toLowerCase()}`,
-    "Classificacoes e auditorias da base Uai Telecom",
-  ];
-
-  const sellerStats = Array.from(new Set(commercialRows.map((row) => row.attendant)))
-    .map((name) => {
-      const sellerRows = commercialRows.filter((row) => row.attendant === name);
-      const validRows = sellerRows.filter((row) => row.eligible);
-      const sellerSales = sellerRows.filter((row) => row.classification === "Venda concluida").length;
-      return {
-        name,
-        volume: sellerRows.length,
-        sales: sellerSales,
-        conversion: (sellerSales / Math.max(validRows.length, 1)) * 100,
-        score: average(validRows.map((row) => row.score)),
-        adherence: average(validRows.map((row) => row.adherence)),
-      };
-    })
-    .filter((seller) => seller.volume > 0)
-    .sort((a, b) => b.conversion - a.conversion || b.sales - a.sales || b.score - a.score);
-
-  const bestSeller = sellerStats[0];
-  const worstSeller = sellerStats[sellerStats.length - 1];
-  const lossCounts = new Map<string, number>();
-  commercialRows
-    .filter((row) => !["Venda concluida", "Lead potencial em andamento"].includes(row.classification))
-    .forEach((row) => lossCounts.set(row.classification, (lossCounts.get(row.classification) ?? 0) + 1));
-  const topLosses = Array.from(lossCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4);
-  const timestamps = commercialRows.map((row) => row.start.getTime());
-  const spanDays = timestamps.length
-    ? Math.max(1, Math.ceil((Math.max(...timestamps) - Math.min(...timestamps)) / 86_400_000) + 1)
-    : 1;
-  const projectedSales = Math.round((sales.length / spanDays) * 30);
-
-  const answer = (content: string, facts: string[] = [], sources = baseSources) => ({ content, facts, sources });
-  const protocol = question.toUpperCase().match(/UAI-\d+/)?.[0];
-  if (protocol) {
-    const conversation = rows.find((row) => row.protocol === protocol);
-    if (!conversation) {
-      return answer(
-        `Nao encontrei o protocolo ${protocol} no periodo e nos filtros atuais. Posso procurar novamente quando o filtro for ampliado.`,
-        [],
-        [`Filtro atual: ${period}`],
-      );
-    }
-    return answer(
-      `Encontrei o atendimento ${protocol}. Ele foi conduzido por ${conversation.attendant}, recebeu nota ${conversation.score.toFixed(1)} e teve ${conversation.adherence}% de aderencia. O desfecho registrado foi "${conversation.classification}".`,
-      [
-        `Canal: ${conversation.channel}`,
-        `Duracao: ${conversation.duration} minutos`,
-        `Alertas: ${conversation.alerts.length ? conversation.alerts.join(", ") : "nenhum"}`,
-      ],
-      [`Atendimento ${protocol}`, `Processo ${conversation.processVersion}`],
-    );
-  }
-
-  const namedSeller = sellerStats.find((seller) => normalized.includes(normalizeAgentQuestion(seller.name)));
-  if (namedSeller) {
-    return answer(
-      `${namedSeller.name} realizou ${namedSeller.volume} atendimentos comerciais no periodo, com ${namedSeller.sales} vendas e conversao de ${namedSeller.conversion.toFixed(1)}% entre os leads elegiveis.`,
-      [
-        `Qualidade media: ${namedSeller.score.toFixed(1)}`,
-        `Aderencia ao processo: ${Math.round(namedSeller.adherence)}%`,
-        `Posicao por qualidade geral: ${Math.max(1, ranking.findIndex((row) => row.name === namedSeller.name) + 1)}`,
-      ],
-    );
-  }
-
-  if (/quem (e|voce)|o que voce|como pode ajudar|suas funcoes|o que faz/.test(normalized)) {
-    return answer(
-      "Sou o Agente de IA da Uai Telecom. Analiso os dados reais disponiveis da operacao para ajudar gestores, administradores e operadores a tomar decisoes com mais seguranca. Nao invento informacoes: quando a base nao sustenta uma resposta, eu aviso claramente.",
-      [
-        "Posso resumir vendas, conversao, qualidade e aderencia",
-        "Posso ranquear, comparar e analisar vendedores",
-        "Posso investigar perdas, alertas e conversas especificas",
-        "Posso explicar os modulos e indicadores do sistema",
-      ],
-      ["Permissoes do usuario atual", "Dados sincronizados da operacao"],
-    );
-  }
-
-  if (/melhor|ranking|ranque/.test(normalized) && bestSeller) {
-    return answer(
-      `${bestSeller.name} lidera o comercial no filtro atual. Foram ${bestSeller.sales} vendas em ${bestSeller.volume} atendimentos, com conversao de ${bestSeller.conversion.toFixed(1)}%.`,
-      [
-        `Qualidade media: ${bestSeller.score.toFixed(1)}`,
-        `Aderencia ao processo: ${Math.round(bestSeller.adherence)}%`,
-        `Criterio: conversao, depois volume de vendas e qualidade`,
-      ],
-    );
-  }
-
-  if (/pior|queda|baixo desempenho|precisa de ajuda/.test(normalized) && worstSeller) {
-    return answer(
-      `${worstSeller.name} aparece como o ponto de maior atencao no comercial neste recorte. A conversao esta em ${worstSeller.conversion.toFixed(1)}%, com ${worstSeller.sales} vendas em ${worstSeller.volume} atendimentos.`,
-      [
-        `Qualidade media: ${worstSeller.score.toFixed(1)}`,
-        `Aderencia: ${Math.round(worstSeller.adherence)}%`,
-        "Recomendacao: revisar conversas antes de definir qualquer acao de coaching",
-      ],
-    );
-  }
-
-  if (/compar/.test(normalized) && sellerStats.length >= 2) {
-    const [first, second] = sellerStats;
-    return answer(
-      `${first.name} esta a frente de ${second.name} principalmente em conversao: ${first.conversion.toFixed(1)}% contra ${second.conversion.toFixed(1)}%.`,
-      [
-        `${first.name}: ${first.sales} vendas, nota ${first.score.toFixed(1)}, aderencia ${Math.round(first.adherence)}%`,
-        `${second.name}: ${second.sales} vendas, nota ${second.score.toFixed(1)}, aderencia ${Math.round(second.adherence)}%`,
-      ],
-    );
-  }
-
-  if (/nao fech|perd|motivo|objec/.test(normalized)) {
-    return answer(
-      `Os motivos de perda mais frequentes no periodo sao ${topLosses.map(([name, count]) => `${name.toLowerCase()} (${count})`).join(", ") || "insuficientes para formar um ranking"}.`,
-      [
-        `${sales.length} vendas concluidas`,
-        `${eligibleLeads.length} leads elegiveis considerados na conversao`,
-        "A resposta usa o desfecho classificado, nao uma suposicao sobre a intencao do cliente",
-      ],
-    );
-  }
-
-  if (/roteiro|script|etapa|pulad|aderencia/.test(normalized)) {
-    return answer(
-      `${lowAdherence.length} atendimentos comerciais ficaram abaixo de 70% de aderencia. A base atual permite identificar esses casos, mas ainda nao possui o agregado por etapa necessario para afirmar qual etapa foi a mais pulada sem risco de inventar.`,
-      [
-        `Aderencia media do comercial: ${Math.round(averageAdherence)}%`,
-        "A integracao das auditorias por etapa habilitara o ranking exato",
-      ],
-      [...baseSources, "Processo Comercial publicado"],
-    );
-  }
-
-  if (/previs|projec|receita/.test(normalized)) {
-    return answer(
-      `Mantendo o ritmo observado, a projecao linear e de aproximadamente ${projectedSales} vendas em 30 dias. Nao consigo projetar receita porque o valor dos planos ainda nao esta presente na base.`,
-      [
-        `Ritmo observado: ${sales.length} vendas em ${spanDays} dias cobertos pelo filtro`,
-        "Projecao simples, sem ajuste de sazonalidade",
-      ],
-    );
-  }
-
-  if (/alert|problema|fora do esperado/.test(normalized)) {
-    return answer(
-      `Ha ${criticalCases.length} atendimentos comerciais com alerta e nota abaixo de 6 no periodo. No sistema completo existem ${alerts.length} alertas gerados para os setores visiveis.`,
-      [
-        `${lowAdherence.length} casos comerciais abaixo de 70% de aderencia`,
-        criticalCases[0] ? `Prioridade sugerida: revisar ${criticalCases[0].protocol}` : "Nenhum caso critico comercial no filtro atual",
-      ],
-      [...baseSources, "Central de Alertas"],
-    );
-  }
-
-  if (/desconto|concorrente|o que (falam|disseram)|conversa real/.test(normalized)) {
-    return answer(
-      "Ainda nao consigo confirmar o que foi dito dentro das conversas porque as transcricoes da Blip e do PBX nao estao conectadas. Quando esses dados estiverem disponiveis, a busca sera feita no conteudo real, sem inferir pelo desfecho.",
-      ["Nenhuma transcricao foi usada nesta resposta"],
-      ["Status das integracoes Blip e PBX"],
-    );
-  }
-
-  if (/qualifica|orcamento|decisao|necessidade|urgencia/.test(normalized)) {
-    return answer(
-      "A base atual nao possui os quatro campos de qualificacao separados. Por isso nao vou atribuir uma nota de orcamento, decisao, necessidade ou urgencia sem evidencia. Esse diagnostico sera habilitado quando as conversas reais forem processadas.",
-      [],
-      ["Campos disponiveis na base atual", "Processo Comercial"],
-    );
-  }
-
-  return answer(
-    `No filtro ${period.toLowerCase()}, encontrei ${commercialRows.length} atendimentos comerciais, ${sales.length} vendas e conversao de ${conversion.toFixed(1)}%. A qualidade media esta em ${averageScore.toFixed(1)} e a aderencia em ${Math.round(averageAdherence)}%.`,
-    [
-      bestSeller ? `Destaque atual: ${bestSeller.name}` : "Ainda nao ha vendedor com amostra suficiente",
-      `${criticalCases.length} casos comerciais exigem atencao`,
-      "Voce pode pedir ranking, motivos de perda, comparacao, previsao ou um protocolo especifico",
-    ],
-  );
-}
-
-function createAgentThreads(
-  rows: Conversation[],
-  ranking: AgentRankingRow[],
-  alerts: AlertItem[],
-  period: string,
-): AgentThread[] {
-  return [
-    ["Qual é meu melhor vendedor esta semana?", "há 16 horas"],
-    ["Tem algum alerta crítico?", "ontem"],
-    ["Por que os clientes não fecham?", "há 2 dias"],
-  ].map(([question, updatedAt], index) => {
-    const response = buildCommercialAgentAnswer(question, rows, ranking, alerts, period);
-    return {
-      id: `seed-${index}`,
-      title: question,
-      updatedAt,
-      messages: [
-        { id: `seed-${index}-user`, role: "user", content: question },
-        { id: `seed-${index}-assistant`, role: "assistant", ...response },
-      ],
-    };
-  });
 }
 
 function AiAgent({
@@ -3817,7 +3273,7 @@ function Integrations({
         </div>
       </article>
       <article className="panel">
-        <PanelTitle icon={ShieldCheck} title="Como a ingestao funciona" subtitle="Fluxo implementado para substituir os dados demonstrativos pelas fontes reais." />
+        <PanelTitle icon={ShieldCheck} title="Como a ingestão funciona" subtitle="Fluxo ativo entre as fontes integradas e a base da supervisão." />
         <div className="summary-grid">
           <div className="info-card">
             <h3>Blip</h3>
