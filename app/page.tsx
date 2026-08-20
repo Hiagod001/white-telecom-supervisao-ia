@@ -3607,7 +3607,7 @@ function Integrations({
   onNotify: (title: string, body: string) => void;
 }) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [lastSync, setLastSync] = useState<{ attendants: number; tickets: number; messages: number; analysisQueued: number } | null>(null);
+  const [lastSync, setLastSync] = useState<{ attendants: number; sources: number } | null>(null);
   const updateConfig = (provider: IntegrationConfig["provider"], key: string, value: string) => {
     setConfigs((items) =>
       items.map((item) =>
@@ -3641,10 +3641,10 @@ function Integrations({
     setBusyAction("test-Blip");
     try {
       const response = await fetch("/api/admin/integrations/blip/test", { method: "POST" });
-      const payload = (await response.json()) as { connected?: boolean; attendants?: number; error?: string };
+      const payload = (await response.json()) as { connected?: boolean; attendants?: number; sources?: unknown[]; error?: string };
       if (!response.ok || !payload.connected) throw new Error(payload.error ?? "Conexão recusada.");
       setConfigs((items) => items.map((item) => item.provider === "Blip" ? { ...item, status: "Configurado" } : item));
-      onNotify("Blip conectada", `${payload.attendants ?? 0} atendentes encontrados na conta.`);
+      onNotify("Blip conectada", `${payload.attendants ?? 0} agentes de Suporte e Comercial encontrados em ${payload.sources?.length ?? 1} conexão(ões).`);
     } catch (error) {
       setConfigs((items) => items.map((item) => item.provider === "Blip" ? { ...item, status: "Erro" } : item));
       onNotify("Blip não conectada", error instanceof Error ? error.message : "Falha inesperada.");
@@ -3659,19 +3659,17 @@ function Integrations({
       const response = await fetch("/api/admin/integrations/blip/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit: 20 }),
+        body: JSON.stringify({ mode: "attendants" }),
       });
-      const payload = (await response.json()) as { attendants?: number; tickets?: number; messages?: number; analysisQueued?: number; error?: string };
+      const payload = (await response.json()) as { attendants?: number; sources?: unknown[]; error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Sincronização recusada.");
       const result = {
         attendants: payload.attendants ?? 0,
-        tickets: payload.tickets ?? 0,
-        messages: payload.messages ?? 0,
-        analysisQueued: payload.analysisQueued ?? 0,
+        sources: payload.sources?.length ?? 1,
       };
       setLastSync(result);
       window.dispatchEvent(new Event("blip-synchronized"));
-      onNotify("Sincronização concluída", `${result.tickets} atendimentos e ${result.messages} mensagens importados.`);
+      onNotify("Agentes sincronizados", `${result.attendants} agentes de Suporte e Comercial cadastrados. Nenhum ticket foi importado.`);
     } catch (error) {
       onNotify("Falha na sincronizacao", error instanceof Error ? error.message : "Falha inesperada.");
     } finally {
@@ -3723,20 +3721,19 @@ function Integrations({
               <div className="form-actions">
                 <button onClick={() => saveIntegration(config)} disabled={Boolean(busyAction)}><CheckCircle2 size={16} /> {busyAction === `save-${config.provider}` ? "Salvando..." : "Salvar"}</button>
                 {config.provider === "Blip" ? <button onClick={testBlip} disabled={Boolean(busyAction)}><Activity size={16} /> {busyAction === "test-Blip" ? "Testando..." : "Testar conexao"}</button> : null}
-                {config.provider === "Blip" ? <button onClick={syncBlip} disabled={Boolean(busyAction)}><RefreshCw size={16} /> {busyAction === "sync-Blip" ? "Sincronizando..." : "Sincronizar agora"}</button> : null}
+                {config.provider === "Blip" ? <button onClick={syncBlip} disabled={Boolean(busyAction)}><RefreshCw size={16} /> {busyAction === "sync-Blip" ? "Sincronizando agentes..." : "Sincronizar agentes"}</button> : null}
                 {config.provider === "OpenAI" ? <button onClick={runAnalysis} disabled={Boolean(busyAction)}><Bot size={16} /> {busyAction === "analyze-OpenAI" ? "Analisando..." : "Analisar pendentes"}</button> : null}
                 {config.provider === "PBX SSH" ? <button onClick={() => onNotify("PBX pendente", "O teste real sera liberado quando o acesso SSH estiver configurado no servidor.")}><Activity size={16} /> Testar conexao</button> : null}
               </div>
-              {config.provider === "Blip" ? <small className="integration-note">Webhook: <code>/api/integrations/blip/webhook</code></small> : null}
+              {config.provider === "Blip" ? <small className="integration-note">Nesta etapa, somente agentes das filas Suporte e Comercial são cadastrados. Tickets e mensagens permanecem bloqueados.</small> : null}
             </article>
           ))}
         </div>
         {lastSync ? (
           <div className="sync-summary">
-            <span><Users size={17} /><strong>{lastSync.attendants}</strong> atendentes</span>
-            <span><MessageCircle size={17} /><strong>{lastSync.tickets}</strong> atendimentos</span>
-            <span><Database size={17} /><strong>{lastSync.messages}</strong> mensagens</span>
-            <span><Bot size={17} /><strong>{lastSync.analysisQueued}</strong> na fila de IA</span>
+            <span><Users size={17} /><strong>{lastSync.attendants}</strong> agentes cadastrados</span>
+            <span><Database size={17} /><strong>{lastSync.sources}</strong> conexões Blip</span>
+            <span><ShieldCheck size={17} /><strong>0</strong> tickets importados</span>
           </div>
         ) : null}
       </article>
@@ -3745,7 +3742,7 @@ function Integrations({
         <div className="summary-grid">
           <div className="info-card">
             <h3>Blip</h3>
-            <p>Importa mensagens, audios e metadados do atendimento. Audios entram na fila de transcricao antes da avaliacao.</p>
+            <p>Agora sincroniza somente os agentes de Suporte e Comercial. A importação de atendimentos será liberada após a configuração dos processos.</p>
           </div>
           <div className="info-card">
             <h3>OpenAI</h3>

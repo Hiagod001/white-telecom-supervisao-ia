@@ -37,6 +37,8 @@ Variaveis obrigatorias no servidor:
 BLIP_CONTRACT_ID=seu-contract-id
 BLIP_BOT_ID=seu-bot-id
 BLIP_AUTH_KEY=chave-do-bot
+BLIP_SOURCES_JSON=[]
+BLIP_TICKET_IMPORT_ENABLED=false
 BLIP_WEBHOOK_SECRET=segredo-definido-pela-uai
 ```
 
@@ -48,7 +50,7 @@ https://SEU-DOMINIO/api/integrations/blip/webhook
 
 Configure o cabecalho personalizado `x-uai-blip-secret` com o mesmo valor de `BLIP_WEBHOOK_SECRET` e habilite o envio de mensagens e eventos. O bot deve ter permissao de leitura do Desk para os comandos `/attendants`, `/tickets` e `/threads-merged`.
 
-O botao **Sincronizar agora** importa os tickets recentes e seus historicos. O webhook mantem as novas mensagens atualizadas em tempo real. A aplicacao preserva os IDs externos para evitar duplicidade.
+O botao **Sincronizar agentes** cadastra apenas agentes vinculados as equipes exatas `Suporte` e `Comercial`, inclusive quando existem varios bots em `BLIP_SOURCES_JSON`. Enquanto `BLIP_TICKET_IMPORT_ENABLED=false`, o webhook aceita a chamada mas ignora tickets e mensagens. A importacao de atendimentos deve ser liberada somente depois da publicacao dos processos de avaliacao.
 
 Documentacao oficial: [API HTTP da Blip](https://docs.blip.ai/), [webhooks para analise](https://help.blip.ai/hc/en-us/articles/4474381206423-Sending-Data-for-Analysis-via-Webhooks) e [formato das entregas](https://help.blip.ai/hc/en-us/articles/29187147295767-Webhook-Submission-Format).
 

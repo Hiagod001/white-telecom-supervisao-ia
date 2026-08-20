@@ -12,7 +12,8 @@ test("Blip connector keeps credentials server-side and exposes ingestion routes"
   ]);
 
   assert.match(client, /BLIP_CONTRACT_ID/);
-  assert.match(client, /Authorization: `Key \$\{config\.authKey\}`/);
+  assert.match(client, /Authorization: authorization/);
+  assert.match(client, /BLIP_SOURCES_JSON/);
   assert.match(client, /\/attendants/);
   assert.match(client, /\/tickets/);
   assert.match(client, /threads-merged/);

@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
 import { blipSyncRuns } from "../../../../../../db/schema";
-import { getBlipThread, hasOpenAiKey, listBlipAttendants, listBlipTickets } from "../../../../../../lib/blip";
-import { upsertBlipAttendant, upsertBlipMessage, upsertBlipTicket } from "../../../../../../lib/blip-storage";
+import { listSupervisionAttendants } from "../../../../../../lib/blip";
+import { upsertBlipAttendant } from "../../../../../../lib/blip-storage";
 import { requireAuth } from "../../../../../../lib/auth";
 
 function routeError(error: unknown) {
@@ -22,59 +22,45 @@ export async function POST(request: Request) {
   const db = getDb();
   let runId = 0;
   try {
-    const payload = (await request.json().catch(() => ({}))) as { limit?: number };
-    const limit = Math.min(50, Math.max(1, Number(payload.limit ?? 20)));
     const [run] = await db
       .insert(blipSyncRuns)
       .values({ status: "Executando" })
       .returning({ id: blipSyncRuns.id });
     runId = run.id;
 
-    const attendants = await listBlipAttendants();
-    for (const attendant of attendants.items) {
-      if (attendant.identity) await upsertBlipAttendant(attendant);
-    }
-
-    const ticketCollection = await listBlipTickets(0, limit);
-    let messageCount = 0;
-    let ticketCount = 0;
-    const failures: string[] = [];
-
-    for (const ticket of ticketCollection.items) {
-      if (!ticket.id || !ticket.customerIdentity) continue;
-      await upsertBlipTicket(ticket);
-      ticketCount += 1;
-      try {
-        const thread = await getBlipThread(ticket.customerIdentity, 100);
-        for (const message of [...thread.items].reverse()) {
-          await upsertBlipMessage(message, ticket.id);
-          messageCount += 1;
-        }
-      } catch (error) {
-        failures.push(`${ticket.id}: ${error instanceof Error ? error.message : "historico indisponivel"}`);
+    const sources = await listSupervisionAttendants();
+    let attendantCount = 0;
+    for (const source of sources) {
+      for (const attendant of source.attendants) {
+        await upsertBlipAttendant(attendant);
+        attendantCount += 1;
       }
     }
 
     await db
       .update(blipSyncRuns)
       .set({
-        status: failures.length ? "Concluido com avisos" : "Concluido",
-        attendants: attendants.items.length,
-        tickets: ticketCount,
-        messages: messageCount,
-        details: failures.slice(0, 10).join("\n"),
+        status: "Concluido",
+        attendants: attendantCount,
+        tickets: 0,
+        messages: 0,
+        details: `Somente agentes de Suporte e Comercial. Fontes: ${sources.map((source) => source.sourceLabel).join(", ")}.`,
         finishedAt: new Date().toISOString(),
       })
       .where(eq(blipSyncRuns.id, runId));
 
     return Response.json({
       synchronized: true,
-      attendants: attendants.items.length,
-      tickets: ticketCount,
-      messages: messageCount,
-      analysisQueued: ticketCount,
-      openAiReady: hasOpenAiKey(),
-      warnings: failures.length,
+      attendants: attendantCount,
+      tickets: 0,
+      messages: 0,
+      analysisQueued: 0,
+      ticketImportEnabled: false,
+      sources: sources.map((source) => ({
+        id: source.sourceId,
+        label: source.sourceLabel,
+        attendants: source.attendants.length,
+      })),
     });
   } catch (error) {
     if (runId) {

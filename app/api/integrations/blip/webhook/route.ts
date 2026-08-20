@@ -1,4 +1,4 @@
-import { getWebhookSecret, type BlipMessage, type BlipTicket } from "../../../../../lib/blip";
+import { getWebhookSecret, isBlipTicketImportEnabled, type BlipMessage, type BlipTicket } from "../../../../../lib/blip";
 import { upsertBlipMessage, upsertBlipTicket } from "../../../../../lib/blip-storage";
 
 function routeError(error: unknown) {
@@ -30,6 +30,14 @@ export async function POST(request: Request) {
     }
     if (receivedSecret !== expectedSecret) {
       return Response.json({ error: "Assinatura do webhook invalida." }, { status: 401 });
+    }
+
+    if (!isBlipTicketImportEnabled()) {
+      return Response.json({
+        accepted: true,
+        ignored: true,
+        reason: "Importacao de tickets aguardando a publicacao dos processos.",
+      });
     }
 
     const body = await request.json();

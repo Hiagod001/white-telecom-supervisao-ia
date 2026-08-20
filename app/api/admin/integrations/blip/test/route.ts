@@ -1,17 +1,18 @@
-import { getBlipConfig, hasOpenAiKey, listBlipAttendants } from "../../../../../../lib/blip";
+import { getBlipSources, hasOpenAiKey, listSupervisionAttendants } from "../../../../../../lib/blip";
 import { requireAuth } from "../../../../../../lib/auth";
 
 export async function POST(request: Request) {
   const auth = await requireAuth(request, ["Administrador"]);
   if (auth.response) return auth.response;
   try {
-    const config = getBlipConfig();
-    const attendants = await listBlipAttendants();
+    const configs = getBlipSources();
+    const sources = await listSupervisionAttendants();
     return Response.json({
       connected: true,
-      contractId: config.contractId,
-      botIdConfigured: Boolean(config.botId),
-      attendants: attendants.total,
+      contractId: configs[0].contractId,
+      botIdConfigured: configs.every((config) => Boolean(config.botId)),
+      attendants: sources.reduce((total, source) => total + source.attendants.length, 0),
+      sources: sources.map((source) => ({ label: source.sourceLabel, attendants: source.attendants.length })),
       openAiReady: hasOpenAiKey(),
     });
   } catch (error) {

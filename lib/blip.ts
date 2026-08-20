@@ -9,6 +9,15 @@ export type BlipCommand = {
   resource?: unknown;
 };
 
+export type BlipSourceConfig = {
+  id: string;
+  label: string;
+  contractId: string;
+  botId: string;
+  authKey: string;
+  endpoint: string;
+};
+
 export type BlipCollection<T> = {
   total: number;
   items: T[];
@@ -58,25 +67,62 @@ export type BlipMessage = {
   [key: string]: unknown;
 };
 
-export function getBlipConfig() {
+function sourceConfig(source: {
+  id?: string;
+  label?: string;
+  contractId?: string;
+  botId?: string;
+  authKey?: string;
+}, fallbackContractId: string, index: number): BlipSourceConfig | null {
+  const contractId = source.contractId?.trim() || fallbackContractId;
+  const authKey = source.authKey?.trim() ?? "";
+  const botId = source.botId?.trim() ?? "";
+  if (!contractId || !/^[a-z0-9-]+$/i.test(contractId) || !authKey) return null;
+  return {
+    id: source.id?.trim() || botId || `blip-${index + 1}`,
+    label: source.label?.trim() || botId || `Blip ${index + 1}`,
+    contractId,
+    botId,
+    authKey,
+    endpoint: `https://${contractId}.http.msging.net/commands`,
+  };
+}
+
+export function getBlipSources() {
   const values = runtimeEnv();
   const contractId = values.BLIP_CONTRACT_ID?.trim() ?? "";
-  const authKey = values.BLIP_AUTH_KEY?.trim() ?? "";
-  const botId = values.BLIP_BOT_ID?.trim() ?? "";
+
+  if (values.BLIP_SOURCES_JSON?.trim()) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(values.BLIP_SOURCES_JSON);
+    } catch {
+      throw new Error("BLIP_SOURCES_JSON possui JSON invalido.");
+    }
+    if (!Array.isArray(parsed)) throw new Error("BLIP_SOURCES_JSON deve ser uma lista de conexoes.");
+    const sources = parsed
+      .map((value, index) => sourceConfig(value as Record<string, string>, contractId, index))
+      .filter((value): value is BlipSourceConfig => Boolean(value));
+    if (sources.length) return sources;
+  }
 
   if (!contractId || !/^[a-z0-9-]+$/i.test(contractId)) {
     throw new Error("BLIP_CONTRACT_ID nao configurado ou invalido.");
   }
+  const authKey = values.BLIP_AUTH_KEY?.trim() ?? "";
   if (!authKey) {
     throw new Error("BLIP_AUTH_KEY nao configurada no ambiente seguro.");
   }
-
-  return {
-    contractId,
+  return [sourceConfig({
+    id: values.BLIP_BOT_ID,
+    label: values.BLIP_BOT_ID,
+    botId: values.BLIP_BOT_ID,
     authKey,
-    botId,
-    endpoint: `https://${contractId}.http.msging.net/commands`,
-  };
+  }, contractId, 0)!];
+}
+
+export function getBlipConfig() {
+  return getBlipSources()[0];
 }
 
 export function hasOpenAiKey() {
@@ -87,12 +133,12 @@ export function getWebhookSecret() {
   return runtimeEnv().BLIP_WEBHOOK_SECRET?.trim() ?? "";
 }
 
-export async function sendBlipCommand<T>(command: BlipCommand): Promise<T> {
-  const config = getBlipConfig();
+export async function sendBlipCommand<T>(command: BlipCommand, config = getBlipConfig()): Promise<T> {
+  const authorization = /^Key\s+/i.test(config.authKey) ? config.authKey : `Key ${config.authKey}`;
   const response = await fetch(config.endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Key ${config.authKey}`,
+      Authorization: authorization,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -126,13 +172,38 @@ function collection<T>(value: unknown): BlipCollection<T> {
   };
 }
 
-export async function listBlipAttendants() {
+export async function listBlipAttendants(config = getBlipConfig(), skip = 0, take = 100) {
+  const safeTake = Math.min(100, Math.max(1, take));
   const resource = await sendBlipCommand<BlipCollection<BlipAttendant>>({
     to: "postmaster@desk.msging.net",
     method: "get",
-    uri: "/attendants",
-  });
+    uri: `/attendants?$skip=${Math.max(0, skip)}&$take=${safeTake}`,
+  }, config);
   return collection<BlipAttendant>(resource);
+}
+
+export const SUPERVISION_BLIP_TEAMS = ["Suporte", "Comercial"] as const;
+
+function supervisionTeams(teams: string[] | undefined) {
+  return (teams ?? []).filter((team) =>
+    SUPERVISION_BLIP_TEAMS.some((allowed) => allowed.localeCompare(team.trim(), "pt-BR", { sensitivity: "accent" }) === 0),
+  );
+}
+
+export async function listSupervisionAttendants() {
+  const sources = getBlipSources();
+  const results = await Promise.all(sources.map(async (source) => {
+    const collection = await listBlipAttendants(source, 0, 100);
+    const attendants = collection.items
+      .map((attendant) => ({ ...attendant, teams: supervisionTeams(attendant.teams) }))
+      .filter((attendant) => attendant.identity && attendant.teams.length > 0);
+    return { sourceId: source.id, sourceLabel: source.label, attendants };
+  }));
+  return results;
+}
+
+export function isBlipTicketImportEnabled() {
+  return runtimeEnv().BLIP_TICKET_IMPORT_ENABLED?.trim().toLowerCase() === "true";
 }
 
 export async function listBlipTickets(skip = 0, take = 50) {
