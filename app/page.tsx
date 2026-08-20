@@ -804,7 +804,7 @@ export default function Home() {
         return response.json() as Promise<{ processes?: ManagedProcess[] }>;
       })
       .then((payload) => {
-        if (payload.processes?.length) setManagedProcesses(payload.processes);
+        if (payload.processes) setManagedProcesses(payload.processes);
       })
       .catch(() => undefined);
   }, [authStatus, userRole]);

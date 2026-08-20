@@ -72,6 +72,8 @@ test("process workspace separates the catalog from create and edit flows", async
   assert.match(page, /Editar processo/);
   assert.match(page, /Documentos anexados/);
   assert.match(page, /method: editing \? "PATCH" : "POST"/);
+  assert.match(page, /if \(payload\.processes\) setManagedProcesses\(payload\.processes\)/);
+  assert.doesNotMatch(page, /payload\.processes\?\.length/);
   assert.match(processRoute, /export async function PATCH/);
   assert.match(processRoute, /version: payload\.version/);
   assert.match(documentsRoute, /Content-Disposition/);
