@@ -58,7 +58,7 @@ export async function upsertBlipTicket(ticket: BlipTicket) {
   const team = ticket.team ?? ticket.queue ?? "Atendimento";
   const attendantIdentity = ticket.agentIdentity ?? ticket.attendantIdentity ?? "";
   const attendantName = ticket.agentName ?? ticket.attendantName ?? (attendantIdentity || "Nao atribuido");
-  const openedAt = ticket.storageDate ?? new Date().toISOString();
+  const openedAt = ticket.openDate ?? ticket.storageDate ?? new Date().toISOString();
   const values = {
     externalId: ticket.id,
     sequentialId: String(ticket.sequentialId ?? ""),

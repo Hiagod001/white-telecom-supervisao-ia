@@ -1,4 +1,5 @@
 import { runtimeEnv } from "./runtime-env";
+import { filterBlipTicketMessages } from "./blip-ticket-filter";
 
 export type BlipCommand = {
   id?: string;
@@ -48,6 +49,7 @@ export type BlipTicket = {
   status?: string;
   provider?: string;
   storageDate?: string;
+  openDate?: string;
   closeDate?: string;
   lastMessageDate?: string;
   tags?: Array<string | { label?: string; value?: string }>;
@@ -63,6 +65,8 @@ export type BlipMessage = {
   metadata?: Record<string, unknown>;
   extras?: Record<string, unknown>;
   storageDate?: string;
+  date?: string;
+  direction?: string;
   status?: string;
   [key: string]: unknown;
 };
@@ -216,6 +220,27 @@ export async function listBlipTickets(skip = 0, take = 50) {
   return collection<BlipTicket>(resource);
 }
 
+export async function getBlipTicket(ticketId: string) {
+  const safeTicketId = encodeURIComponent(ticketId);
+  const failures: string[] = [];
+
+  for (const source of getBlipSources()) {
+    try {
+      const ticket = await sendBlipCommand<BlipTicket>({
+        to: "postmaster@desk.msging.net",
+        method: "get",
+        uri: `/tickets/${safeTicketId}`,
+      }, source);
+      if (ticket?.id === ticketId) return { ticket, source };
+      failures.push(`${source.label}: ticket nao encontrado`);
+    } catch (error) {
+      failures.push(`${source.label}: ${error instanceof Error ? error.message : "falha desconhecida"}`);
+    }
+  }
+
+  throw new Error(`Ticket ${ticketId} nao localizado nas fontes Blip. ${failures.join("; ")}`);
+}
+
 export async function getBlipThread(customerIdentity: string, take = 100) {
   const identity = encodeURIComponent(customerIdentity);
   const safeTake = Math.min(100, Math.max(1, take));
@@ -241,12 +266,15 @@ export async function getBlipTicketMessages(ticketId: string, refreshExpiredMedi
   const safeTicketId = encodeURIComponent(ticketId);
   const safeTake = Math.min(100, Math.max(1, take));
   const refresh = refreshExpiredMedia ? "&refreshExpiredMedia=true" : "";
+  const { ticket, source } = await getBlipTicket(ticketId);
   const resource = await sendBlipCommand<BlipCollection<BlipMessage>>({
     to: "postmaster@desk.msging.net",
     method: "get",
     uri: `/tickets/${safeTicketId}/messages?getFromOwnerIfTunnel=true&$take=${safeTake}&$ascending=true${refresh}`,
-  });
-  return collection<BlipMessage>(resource);
+  }, source);
+  const messages = collection<BlipMessage>(resource);
+  const filtered = filterBlipTicketMessages(ticket, messages.items, ticketId);
+  return { total: filtered.total, items: filtered.items as BlipMessage[] };
 }
 
 export async function refreshBlipMediaUrl(ticketId: string, messageId: string) {
@@ -308,10 +336,11 @@ export function normalizeBlipMessage(message: BlipMessage, fallbackTicketId = ""
   const messageKind = extraString(extras, ["#messageKind", "messageKind"]).toLowerCase();
   const stateId = extraString(extras, ["#stateId", "stateId"]);
   const ticketFromState = stateId.startsWith("desk:") ? stateId.slice(5) : "";
-  const ticketId = extraString(extras, ["#ticketId", "ticketId", "ticket"]) || ticketFromState || fallbackTicketId;
+  const ticketId = extraString(extras, ["#message.ticketId", "#ticketId", "ticketId", "ticket"]) || ticketFromState || fallbackTicketId;
   const senderIdentity = message.from ?? "";
   const isSystem = contentType.includes("iris.ticket") || contentType.includes("notification");
-  const isOutgoing = messageKind === "response" || senderIdentity.includes("@desk.msging.net");
+  const direction = message.direction?.toLowerCase();
+  const isOutgoing = direction === "sent" || messageKind === "response" || senderIdentity.includes("@desk.msging.net");
   const role = isSystem ? "system" : isOutgoing ? "attendant" : "client";
   const customerIdentity = extraString(extras, ["#customerIdentity", "customerIdentity"])
     || (role === "client" ? message.from ?? "" : message.to ?? "");
@@ -327,7 +356,7 @@ export function normalizeBlipMessage(message: BlipMessage, fallbackTicketId = ""
     contentType,
     contentText: content.text,
     mediaUri: content.mediaUri,
-    storageDate: extraString(extras, ["#envelope.storageDate", "envelope.storageDate"]) || message.storageDate || new Date().toISOString(),
+    storageDate: message.date || extraString(extras, ["#envelope.storageDate", "envelope.storageDate"]) || message.storageDate || new Date().toISOString(),
     status: message.status ?? "Recebida",
     rawJson: JSON.stringify(message),
   };

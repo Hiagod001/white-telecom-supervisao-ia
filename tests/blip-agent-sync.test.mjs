@@ -15,4 +15,6 @@ test("Blip sync imports agents only while process setup is pending", async () =>
   assert.match(syncRoute, /messages:\s*0/);
   assert.match(webhookRoute, /isBlipTicketImportEnabled/);
   assert.match(blip, /\["Suporte", "Comercial"\]/);
+  assert.match(blip, /filterBlipTicketMessages/);
+  assert.match(blip, /#message\.ticketId/);
 });
