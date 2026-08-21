@@ -3,9 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("Blip sync imports agents only while process setup is pending", async () => {
-  const [syncRoute, webhookRoute, blip] = await Promise.all([
+  const [syncRoute, webhookRoute, audioRoute, blip] = await Promise.all([
     readFile(new URL("../app/api/admin/integrations/blip/sync/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/integrations/blip/webhook/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/conversations/audio/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/blip.ts", import.meta.url), "utf8"),
   ]);
 
@@ -17,4 +18,6 @@ test("Blip sync imports agents only while process setup is pending", async () =>
   assert.match(blip, /\["Suporte", "Comercial"\]/);
   assert.match(blip, /filterBlipTicketMessages/);
   assert.match(blip, /#message\.ticketId/);
+  assert.doesNotMatch(blip, /uri:\s*`\/tickets\/\$\{safeTicketId\}`/);
+  assert.match(audioRoute, /ticket\.rawJson/);
 });

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { blipMessages, blipTickets } from "../../../../db/schema";
 import { requireAuth } from "../../../../lib/auth";
-import { refreshBlipMediaUrl } from "../../../../lib/blip";
+import { refreshBlipMediaUrl, type BlipTicket } from "../../../../lib/blip";
 
 export async function GET(request: Request) {
   const auth = await requireAuth(request);
@@ -25,7 +25,13 @@ export async function GET(request: Request) {
       }
     }
 
-    const mediaUri = await refreshBlipMediaUrl(message.ticketId, message.externalId);
+    if (!ticket) return Response.json({ error: "Ticket do audio nao encontrado." }, { status: 404 });
+    const ticketWindow = {
+      ...(JSON.parse(ticket.rawJson) as Partial<BlipTicket>),
+      id: ticket.externalId,
+      customerIdentity: ticket.customerIdentity,
+    };
+    const mediaUri = await refreshBlipMediaUrl(ticketWindow, message.externalId);
     await db.update(blipMessages).set({ mediaUri }).where(eq(blipMessages.id, message.id));
     const range = request.headers.get("range");
     const mediaResponse = await fetch(mediaUri, { headers: range ? { Range: range } : undefined });

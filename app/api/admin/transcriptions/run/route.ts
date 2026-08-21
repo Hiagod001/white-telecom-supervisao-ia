@@ -3,10 +3,11 @@ import { getDb } from "../../../../../db";
 import {
   audioTranscriptions,
   blipMessages,
+  blipTickets,
   conversationAnalyses,
 } from "../../../../../db/schema";
 import { requireAuth } from "../../../../../lib/auth";
-import { getBlipTicketMessages, normalizeBlipMessage } from "../../../../../lib/blip";
+import { getBlipTicketMessages, normalizeBlipMessage, type BlipTicket } from "../../../../../lib/blip";
 import { transcribeBlipAudio } from "../../../../../lib/openai-transcription";
 
 function routeError(error: unknown) {
@@ -70,6 +71,12 @@ export async function POST(request: Request) {
     const limit = Math.min(10, Math.max(1, Number(payload.limit ?? 5)));
     const db = getDb();
     const messages = await audioRows();
+    const tickets = await db.select().from(blipTickets);
+    const ticketById = new Map(tickets.map((ticket) => [ticket.externalId, {
+      ...(JSON.parse(ticket.rawJson) as Partial<BlipTicket>),
+      id: ticket.externalId,
+      customerIdentity: ticket.customerIdentity,
+    }]));
 
     for (const message of messages) {
       await db.insert(audioTranscriptions).values({
@@ -92,7 +99,9 @@ export async function POST(request: Request) {
 
     const refreshedMedia = (ticketId: string) => {
       if (!refreshedTickets.has(ticketId)) {
-        refreshedTickets.set(ticketId, getBlipTicketMessages(ticketId, true, 100).then((collection) => new Map(
+        const ticket = ticketById.get(ticketId);
+        if (!ticket) throw new Error(`Ticket ${ticketId} nao encontrado no banco.`);
+        refreshedTickets.set(ticketId, getBlipTicketMessages(ticket, true, 100).then((collection) => new Map(
           collection.items.map((item) => {
             const normalized = normalizeBlipMessage(item, ticketId);
             return [normalized.externalId, normalized.mediaUri ?? ""];

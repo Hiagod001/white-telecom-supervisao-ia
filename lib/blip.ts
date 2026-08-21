@@ -220,27 +220,6 @@ export async function listBlipTickets(skip = 0, take = 50) {
   return collection<BlipTicket>(resource);
 }
 
-export async function getBlipTicket(ticketId: string) {
-  const safeTicketId = encodeURIComponent(ticketId);
-  const failures: string[] = [];
-
-  for (const source of getBlipSources()) {
-    try {
-      const ticket = await sendBlipCommand<BlipTicket>({
-        to: "postmaster@desk.msging.net",
-        method: "get",
-        uri: `/tickets/${safeTicketId}`,
-      }, source);
-      if (ticket?.id === ticketId) return { ticket, source };
-      failures.push(`${source.label}: ticket nao encontrado`);
-    } catch (error) {
-      failures.push(`${source.label}: ${error instanceof Error ? error.message : "falha desconhecida"}`);
-    }
-  }
-
-  throw new Error(`Ticket ${ticketId} nao localizado nas fontes Blip. ${failures.join("; ")}`);
-}
-
 export async function getBlipThread(customerIdentity: string, take = 100) {
   const identity = encodeURIComponent(customerIdentity);
   const safeTake = Math.min(100, Math.max(1, take));
@@ -262,23 +241,37 @@ export async function getBlipThread(customerIdentity: string, take = 100) {
   }
 }
 
-export async function getBlipTicketMessages(ticketId: string, refreshExpiredMedia = false, take = 100) {
+export async function getBlipTicketMessages(ticket: BlipTicket, refreshExpiredMedia = false, take = 100) {
+  const ticketId = ticket.id;
   const safeTicketId = encodeURIComponent(ticketId);
   const safeTake = Math.min(100, Math.max(1, take));
   const refresh = refreshExpiredMedia ? "&refreshExpiredMedia=true" : "";
-  const { ticket, source } = await getBlipTicket(ticketId);
-  const resource = await sendBlipCommand<BlipCollection<BlipMessage>>({
-    to: "postmaster@desk.msging.net",
-    method: "get",
-    uri: `/tickets/${safeTicketId}/messages?getFromOwnerIfTunnel=true&$take=${safeTake}&$ascending=true${refresh}`,
-  }, source);
-  const messages = collection<BlipMessage>(resource);
-  const filtered = filterBlipTicketMessages(ticket, messages.items, ticketId);
-  return { total: filtered.total, items: filtered.items as BlipMessage[] };
+  const failures: string[] = [];
+  let emptyResult: BlipCollection<BlipMessage> | null = null;
+
+  for (const source of getBlipSources()) {
+    try {
+      const resource = await sendBlipCommand<BlipCollection<BlipMessage>>({
+        to: "postmaster@desk.msging.net",
+        method: "get",
+        uri: `/tickets/${safeTicketId}/messages?getFromOwnerIfTunnel=true&$take=${safeTake}&$ascending=true${refresh}`,
+      }, source);
+      const messages = collection<BlipMessage>(resource);
+      const filtered = filterBlipTicketMessages(ticket, messages.items, ticketId);
+      const result = { total: filtered.total, items: filtered.items as BlipMessage[] };
+      if (result.total > 0) return result;
+      emptyResult ??= result;
+    } catch (error) {
+      failures.push(`${source.label}: ${error instanceof Error ? error.message : "falha desconhecida"}`);
+    }
+  }
+
+  if (emptyResult) return emptyResult;
+  throw new Error(`Mensagens do ticket ${ticketId} nao localizadas nas fontes Blip. ${failures.join("; ")}`);
 }
 
-export async function refreshBlipMediaUrl(ticketId: string, messageId: string) {
-  const messages = await getBlipTicketMessages(ticketId, true, 100);
+export async function refreshBlipMediaUrl(ticket: BlipTicket, messageId: string) {
+  const messages = await getBlipTicketMessages(ticket, true, 100);
   const message = messages.items.find((item) => item.id === messageId);
   if (!message) throw new Error("A mensagem de audio nao foi localizada novamente na Blip.");
   const normalized = normalizeBlipMessage(message, ticketId);
